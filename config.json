@@ -1,0 +1,76 @@
+{
+  "custom_models": [
+    {
+      "model_display_name": "Claude Sonnet 4.5 [Kiro]",
+      "model": "claude-sonnet-4-5-20250929",
+      "base_url": "http://127.0.0.1:8000",
+      "api_key": "kiro-proxy-123",
+      "provider": "anthropic",
+      "supports_vision": true,
+      "max_tokens": 32000
+    },
+    {
+      "model_display_name": "Claude Sonnet 4.5 Thinking [Kiro]",
+      "model": "claude-sonnet-4-5-20250929-thinking",
+      "base_url": "http://127.0.0.1:8000",
+      "api_key": "kiro-proxy-123",
+      "provider": "anthropic",
+      "supports_vision": true,
+      "max_tokens": 32000
+    },
+    {
+      "model_display_name": "Claude Opus 4.5 [Kiro]",
+      "model": "claude-opus-4-5-20251101",
+      "base_url": "http://127.0.0.1:8000",
+      "api_key": "kiro-proxy-123",
+      "provider": "anthropic",
+      "supports_vision": true,
+      "max_tokens": 32000
+    },
+    {
+      "model_display_name": "Claude Opus 4.5 Thinking [Kiro]",
+      "model": "claude-opus-4-5-20251101-thinking",
+      "base_url": "http://127.0.0.1:8000",
+      "api_key": "kiro-proxy-123",
+      "provider": "anthropic",
+      "supports_vision": true,
+      "max_tokens": 32000
+    },
+    {
+      "model_display_name": "Claude Opus 4.6 [Kiro]",
+      "model": "claude-opus-4-6",
+      "base_url": "http://127.0.0.1:8000",
+      "api_key": "kiro-proxy-123",
+      "provider": "anthropic",
+      "supports_vision": true,
+      "max_tokens": 32000
+    },
+    {
+      "model_display_name": "Claude Opus 4.6 Thinking [Kiro]",
+      "model": "claude-opus-4-6-thinking",
+      "base_url": "http://127.0.0.1:8000",
+      "api_key": "kiro-proxy-123",
+      "provider": "anthropic",
+      "supports_vision": true,
+      "max_tokens": 32000
+    },
+    {
+      "model_display_name": "Claude Haiku 4.5 [Kiro]",
+      "model": "claude-haiku-4-5-20251001",
+      "base_url": "http://127.0.0.1:8000",
+      "api_key": "kiro-proxy-123",
+      "provider": "anthropic",
+      "supports_vision": true,
+      "max_tokens": 32000
+    },
+    {
+      "model_display_name": "Claude Haiku 4.5 Thinking [Kiro]",
+      "model": "claude-haiku-4-5-20251001-thinking",
+      "base_url": "http://127.0.0.1:8000",
+      "api_key": "kiro-proxy-123",
+      "provider": "anthropic",
+      "supports_vision": true,
+      "max_tokens": 32000
+    }
+  ]
+}
