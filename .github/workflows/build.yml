@@ -1,0 +1,107 @@
+name: Build Kiro Launcher
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Configure cargo mirror
+        shell: bash
+        run: |
+          mkdir -p ~/.cargo
+          cat > ~/.cargo/config.toml << 'EOF'
+          [source.crates-io]
+          replace-with = 'rsproxy-sparse'
+
+          [source.rsproxy-sparse]
+          registry = "sparse+https://rsproxy.cn/index/"
+
+          [net]
+          git-fetch-with-cli = true
+          EOF
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            kiro-launcher/src-tauri/target/
+            kiro.rs/target/
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.target }}-cargo-
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
+
+      - name: Install frontend deps
+        working-directory: kiro-launcher
+        run: pnpm install
+
+      # Build kiro-rs first
+      - name: Build kiro-rs
+        run: cargo build --release --manifest-path kiro.rs/Cargo.toml --target ${{ matrix.target }}
+
+      # Copy kiro-rs binary as sidecar
+      - name: Copy sidecar (Unix)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          mkdir -p kiro-launcher/src-tauri/binaries
+          cp kiro.rs/target/${{ matrix.target }}/release/kiro-rs kiro-launcher/src-tauri/binaries/kiro-rs-${{ matrix.target }}
+          chmod +x kiro-launcher/src-tauri/binaries/kiro-rs-${{ matrix.target }}
+
+      - name: Copy sidecar (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Force -Path kiro-launcher/src-tauri/binaries
+          Copy-Item kiro.rs/target/${{ matrix.target }}/release/kiro-rs.exe kiro-launcher/src-tauri/binaries/kiro-rs-${{ matrix.target }}.exe
+
+      - name: Build Tauri
+        working-directory: kiro-launcher
+        run: pnpm tauri build --target ${{ matrix.target }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kiro-launcher-${{ matrix.target }}
+          path: |
+            kiro-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            kiro-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
+            kiro-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            kiro-launcher/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
