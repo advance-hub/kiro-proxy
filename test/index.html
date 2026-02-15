@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实时聊天室</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
+    header { background: #16213e; padding: 16px; text-align: center; border-bottom: 1px solid #0f3460; }
+    header h1 { font-size: 1.5rem; color: #e94560; }
+    #status { font-size: 0.85rem; color: #888; margin-top: 4px; }
+    #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .msg { padding: 10px 14px; border-radius: 12px; max-width: 80%; word-wrap: break-word; }
+    .msg.system { align-self: center; background: #0f3460; color: #888; font-size: 0.85rem; }
+    .msg.chat { background: #16213e; }
+    .msg.chat.self { align-self: flex-end; background: #e94560; }
+    .msg .name { font-size: 0.75rem; color: #e94560; margin-bottom: 4px; }
+    .msg.self .name { color: rgba(255,255,255,0.7); }
+    .msg .time { font-size: 0.7rem; color: #666; margin-top: 4px; }
+    #input-area { display: flex; gap: 8px; padding: 16px; background: #16213e; border-top: 1px solid #0f3460; }
+    #input-area input { flex: 1; padding: 12px; border: none; border-radius: 8px; background: #1a1a2e; color: #eee; font-size: 1rem; }
+    #input-area input:focus { outline: 2px solid #e94560; }
+    #input-area button { padding: 12px 24px; border: none; border-radius: 8px; background: #e94560; color: #fff; font-size: 1rem; cursor: pointer; }
+    #input-area button:hover { background: #ff6b6b; }
+    #name-bar { display: flex; gap: 8px; padding: 8px 16px; background: #0f3460; }
+    #name-bar input { flex: 1; padding: 8px; border: none; border-radius: 4px; background: #1a1a2e; color: #eee; }
+    #name-bar button { padding: 8px 16px; border: none; border-radius: 4px; background: #e94560; color: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>💬 实时聊天室</h1>
+    <div id="status">连接中...</div>
+  </header>
+  <div id="name-bar">
+    <input type="text" id="nameInput" placeholder="输入昵称">
+    <button onclick="setName()">设置昵称</button>
+  </div>
+  <div id="messages"></div>
+  <div id="input-area">
+    <input type="text" id="msgInput" placeholder="输入消息..." onkeypress="if(event.key==='Enter')sendMsg()">
+    <button onclick="sendMsg()">发送</button>
+  </div>
+
+  <script>
+    let ws, myName = '';
+    const messages = document.getElementById('messages');
+    const status = document.getElementById('status');
+    const msgInput = document.getElementById('msgInput');
+    const nameInput = document.getElementById('nameInput');
+
+    function connect() {
+      ws = new WebSocket(`ws://${location.host}`);
+      ws.onopen = () => { status.textContent = '✅ 已连接'; status.style.color = '#4ade80'; };
+      ws.onclose = () => { status.textContent = '❌ 已断开，3秒后重连...'; status.style.color = '#f87171'; setTimeout(connect, 3000); };
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        const div = document.createElement('div');
+        div.className = `msg ${msg.type}`;
+        if (msg.type === 'chat') {
+          if (msg.name === myName) div.classList.add('self');
+          div.innerHTML = `<div class="name">${msg.name}</div><div>${msg.content}</div><div class="time">${msg.time}</div>`;
+        } else {
+          div.textContent = `${msg.time} ${msg.content}`;
+        }
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+      };
+    }
+
+    function sendMsg() {
+      const content = msgInput.value.trim();
+      if (content && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'chat', content }));
+        msgInput.value = '';
+      }
+    }
+
+    function setName() {
+      const name = nameInput.value.trim();
+      if (name && ws.readyState === 1) {
+        myName = name;
+        ws.send(JSON.stringify({ type: 'setName', name }));
+        nameInput.value = '';
+      }
+    }
+
+    connect();
+  </script>
+</body>
+</html>
