@@ -391,6 +391,11 @@ func (a *App) SyncAccount(id string) (Account, error) {
 	// 构建凭证
 	var creds *CredentialsFile
 	isIdC := account.Provider == "BuilderId" || account.Provider == "Enterprise" || account.ClientID != ""
+
+	// 调试日志
+	fmt.Printf("[DEBUG] SyncAccount: Provider=%s, ClientID=%s, isIdC=%v\n",
+		account.Provider, account.ClientID, isIdC)
+
 	if isIdC {
 		creds = &CredentialsFile{
 			RefreshToken: account.RefreshToken,
@@ -495,13 +500,41 @@ func (a *App) SwitchAccount(id string) (string, error) {
 
 	tokenBytes, _ := json.MarshalIndent(tokenData, "", "  ")
 
-	// 原子写入
+	// 原子写入 kiro-auth-token.json
 	tmpPath := tokenPath + ".tmp"
 	if err := os.WriteFile(tmpPath, tokenBytes, 0644); err != nil {
 		return "", fmt.Errorf("写入临时文件失败: %v", err)
 	}
 	if err := os.Rename(tmpPath, tokenPath); err != nil {
 		return "", fmt.Errorf("重命名文件失败: %v", err)
+	}
+
+	// 同时写入 credentials.json，让 kiro.rs 代理能通过热加载感知账号切换
+	isIdC := account.Provider == "BuilderId" || account.Provider == "Enterprise" || account.ClientID != ""
+	authMethod := "social"
+	if isIdC {
+		authMethod = "idc"
+	}
+	creds := &CredentialsFile{
+		RefreshToken: account.RefreshToken,
+		ExpiresAt:    account.ExpiresAt,
+		AuthMethod:   authMethod,
+	}
+	if account.AccessToken != "" {
+		creds.AccessToken = &account.AccessToken
+	}
+	if isIdC {
+		creds.ClientID = &account.ClientID
+		creds.ClientSecret = &account.ClientSecret
+		region := account.Region
+		if region == "" {
+			region = "us-east-1"
+		}
+		creds.Region = &region
+	}
+	if err := saveCredentialsFileSmart(creds); err != nil {
+		// 非致命错误，不阻止切换
+		fmt.Fprintf(os.Stderr, "写入 credentials.json 失败: %v\n", err)
 	}
 
 	return fmt.Sprintf("已切换到 %s", account.Email), nil
@@ -622,6 +655,7 @@ func (a *App) ExportAccounts(ids []string) (string, error) {
 		Label        string `json:"label,omitempty"`
 		Provider     string `json:"provider"`
 		RefreshToken string `json:"refreshToken"`
+		AuthMethod   string `json:"authMethod,omitempty"`
 		ClientID     string `json:"clientId,omitempty"`
 		ClientSecret string `json:"clientSecret,omitempty"`
 		Region       string `json:"region,omitempty"`
@@ -629,11 +663,18 @@ func (a *App) ExportAccounts(ids []string) (string, error) {
 
 	exports := make([]ExportAccount, len(accounts))
 	for i, acc := range accounts {
+		// 根据账号类型设置 authMethod
+		authMethod := "social"
+		if acc.Provider == "BuilderId" || acc.Provider == "Enterprise" || acc.ClientID != "" {
+			authMethod = "idc"
+		}
+
 		exports[i] = ExportAccount{
 			Email:        acc.Email,
 			Label:        acc.Label,
 			Provider:     acc.Provider,
 			RefreshToken: acc.RefreshToken,
+			AuthMethod:   authMethod,
 			ClientID:     acc.ClientID,
 			ClientSecret: acc.ClientSecret,
 			Region:       acc.Region,

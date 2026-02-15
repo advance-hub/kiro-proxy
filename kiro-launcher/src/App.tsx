@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Button, Typography, Toast } from "@douyinfe/semi-ui";
-import { IconPlay, IconKey, IconInfoCircle, IconSetting, IconLink, IconMoon, IconSun } from "@douyinfe/semi-icons";
+import { IconPlay, IconKey, IconInfoCircle, IconSetting, IconLink, IconMoon, IconSun, IconHelpCircle } from "@douyinfe/semi-icons";
 
 import ProxyPanel from "./components/ProxyPanel";
 import AccountManager from "./components/AccountManager/index";
@@ -9,6 +9,7 @@ import SettingsPanel from "./components/SettingsPanel";
 import OpenCodePanel from "./components/OpenCodePanel";
 import ClaudeCodePanel from "./components/ClaudeCodePanel";
 import TunnelPanel from "./components/TunnelPanel";
+import AboutPanel from "./components/AboutPanel";
 
 const { Text } = Typography;
 
@@ -90,6 +91,7 @@ function MainApp() {
     { key: "settings", label: "Droid", icon: <IconSetting /> },
     { key: "opencode", label: "OpenCode", icon: <IconLink /> },
     { key: "claudecode", label: "Claude Code", icon: <IconLink /> },
+    { key: "about", label: "关于", icon: <IconHelpCircle /> },
   ];
 
   return (
@@ -138,6 +140,7 @@ function MainApp() {
         {activeTab === "settings" && <SettingsPanel />}
         {activeTab === "opencode" && <OpenCodePanel />}
         {activeTab === "claudecode" && <ClaudeCodePanel />}
+        {activeTab === "about" && <AboutPanel />}
       </div>
     </div>
   );

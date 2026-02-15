@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Button, Card, Input, Typography, Toast, Space, Select, Switch, Tag } from "@douyinfe/semi-ui";
+import { Button, Card, Input, Typography, Toast, Space, Tag } from "@douyinfe/semi-ui";
 import { IconRefresh, IconSave, IconPlay, IconStop, IconLink } from "@douyinfe/semi-icons";
 
 const { Text } = Typography;
@@ -13,6 +13,7 @@ interface TunnelConfig {
   customDomain: string;
   remotePort?: number;
   proxyType: string;
+  vhostHTTPPort?: number;
 }
 
 interface TunnelStatus {
@@ -29,12 +30,13 @@ const wails = () => {
 export default function TunnelPanel() {
   const [config, setConfig] = useState<TunnelConfig>({
     enabled: false,
-    serverAddr: "117.72.183.248",
+    serverAddr: "",
     serverPort: 7000,
     token: "",
     proxyName: "kiro-proxy",
     customDomain: "",
     proxyType: "http",
+    vhostHTTPPort: 8080,
   });
   const [status, setStatus] = useState<TunnelStatus>({ running: false, publicUrl: "" });
   const [loading, setLoading] = useState(false);
@@ -162,75 +164,84 @@ export default function TunnelPanel() {
         </div>
       </Card>
 
-      {/* 配置卡片 */}
-      <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10, marginBottom: 12 }}>
-        <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>基础配置</Text>
-        
-        <div style={rowStyle}>
-          <div><div style={labelStyle}>启用穿透</div><div style={descStyle}>开启后可将本地代理暴露到公网</div></div>
-          <Switch checked={config.enabled} onChange={v => update("enabled", v)} />
-        </div>
-
-        <div style={rowStyle}>
-          <div><div style={labelStyle}>穿透类型</div><div style={descStyle}>HTTP 需要域名，TCP 使用端口</div></div>
-          <Select size="small" style={{ width: 120 }} value={config.proxyType} onChange={v => update("proxyType", v)}>
-            <Select.Option value="http">HTTP</Select.Option>
-            <Select.Option value="tcp">TCP</Select.Option>
-          </Select>
-        </div>
-
-        <div style={{ ...rowStyle, borderBottom: "none" }}>
-          <div><div style={labelStyle}>代理名称</div><div style={descStyle}>FRP 代理标识名</div></div>
-          <Input size="small" style={{ width: 180 }} value={config.proxyName} onChange={v => update("proxyName", v)} />
-        </div>
-      </Card>
-
+      {/* FRP 服务器配置 */}
       <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10, marginBottom: 12 }}>
         <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>FRP 服务器</Text>
-        
+
         <div style={rowStyle}>
-          <div><div style={labelStyle}>服务器地址</div><div style={descStyle}>FRP 服务端 IP 或域名</div></div>
-          <Input size="small" style={{ width: 180 }} value={config.serverAddr} onChange={v => update("serverAddr", v)} />
+          <div style={{ flex: 1 }}><div style={labelStyle}>服务器地址</div><div style={descStyle}>FRP 服务端 IP 或域名</div></div>
+          <Input size="small" style={{ width: 200 }} placeholder="如 1.2.3.4" value={config.serverAddr} onChange={v => update("serverAddr", v)} />
         </div>
 
         <div style={rowStyle}>
-          <div><div style={labelStyle}>服务器端口</div><div style={descStyle}>FRP 服务端通信端口</div></div>
-          <Input size="small" style={{ width: 120 }} type="number" value={String(config.serverPort)} onChange={v => update("serverPort", parseInt(v) || 7000)} />
+          <div style={{ flex: 1 }}><div style={labelStyle}>服务器端口</div><div style={descStyle}>FRP 服务端 bindPort，默认 7000</div></div>
+          <Input size="small" style={{ width: 100 }} type="number" value={String(config.serverPort)} onChange={v => update("serverPort", Number(v))} />
         </div>
 
         <div style={{ ...rowStyle, borderBottom: "none" }}>
-          <div><div style={labelStyle}>认证 Token</div><div style={descStyle}>与服务端配置的 token 一致</div></div>
-          <Input size="small" style={{ width: 180 }} type="password" value={config.token} onChange={v => update("token", v)} placeholder="your_secure_token" />
+          <div style={{ flex: 1 }}><div style={labelStyle}>认证 Token</div><div style={descStyle}>与服务端 auth.token 一致</div></div>
+          <Input size="small" style={{ width: 200 }} mode="password" placeholder="frps.toml 中的 token" value={config.token} onChange={v => update("token", v)} />
         </div>
       </Card>
 
-      {config.proxyType === "http" ? (
-        <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10 }}>
-          <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>HTTP 穿透配置</Text>
-          <div style={{ ...rowStyle, borderBottom: "none" }}>
-            <div><div style={labelStyle}>自定义域名</div><div style={descStyle}>需解析到 FRP 服务器 IP</div></div>
-            <Input size="small" style={{ width: 220 }} value={config.customDomain} onChange={v => update("customDomain", v)} placeholder="kiro-proxy.example.com" />
-          </div>
-        </Card>
-      ) : (
-        <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10 }}>
-          <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>TCP 穿透配置</Text>
-          <div style={{ ...rowStyle, borderBottom: "none" }}>
-            <div><div style={labelStyle}>远程端口</div><div style={descStyle}>服务器上暴露的端口</div></div>
-            <Input size="small" style={{ width: 120 }} type="number" value={String(config.remotePort || 13000)} onChange={v => update("remotePort", parseInt(v) || 13000)} />
-          </div>
-        </Card>
-      )}
+      {/* 代理配置 */}
+      <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10, marginBottom: 12 }}>
+        <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>代理配置</Text>
 
-      {/* 使用说明 */}
-      <Card bodyStyle={{ padding: "16px" }} style={{ borderRadius: 10, marginTop: 16, background: "var(--semi-color-fill-0)" }}>
-        <Text strong size="small" style={{ display: "block", marginBottom: 8 }}>使用说明</Text>
-        <Text type="tertiary" size="small" style={{ lineHeight: 1.8 }}>
-          1. 确保 FRP 服务端已运行，且 token 配置正确<br />
-          2. HTTP 模式需要将域名 DNS 解析到 FRP 服务器 IP<br />
-          3. 启动穿透后，Cursor 等工具可使用公网地址访问<br />
-          4. 公网地址格式：http://域名:8080/v1 (HTTP) 或 http://IP:端口/v1 (TCP)
-        </Text>
+        <div style={rowStyle}>
+          <div style={{ flex: 1 }}><div style={labelStyle}>代理名称</div><div style={descStyle}>FRP 代理标识名（需唯一）</div></div>
+          <Input size="small" style={{ width: 180 }} value={config.proxyName} onChange={v => update("proxyName", v)} />
+        </div>
+
+        <div style={rowStyle}>
+          <div style={{ flex: 1 }}><div style={labelStyle}>穿透模式</div><div style={descStyle}>HTTP 需域名，TCP 需端口</div></div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {["http", "tcp"].map(t => (
+              <Tag key={t} color={config.proxyType === t ? "blue" : "grey"} type={config.proxyType === t ? "solid" : "ghost"}
+                style={{ cursor: "pointer", padding: "2px 12px" }}
+                onClick={() => update("proxyType", t)}>{t.toUpperCase()}</Tag>
+            ))}
+          </div>
+        </div>
+
+        {config.proxyType === "http" ? (
+          <>
+            <div style={rowStyle}>
+              <div style={{ flex: 1 }}><div style={labelStyle}>自定义域名</div><div style={descStyle}>需解析到服务器 IP</div></div>
+              <Input size="small" style={{ width: 200 }} placeholder="如 kiro.example.com" value={config.customDomain} onChange={v => update("customDomain", v)} />
+            </div>
+            <div style={{ ...rowStyle, borderBottom: "none" }}>
+              <div style={{ flex: 1 }}><div style={labelStyle}>HTTP 端口</div><div style={descStyle}>服务端 vhostHTTPPort，默认 8080</div></div>
+              <Input size="small" style={{ width: 100 }} type="number" value={String(config.vhostHTTPPort || 8080)} onChange={v => update("vhostHTTPPort", Number(v))} />
+            </div>
+          </>
+        ) : (
+          <div style={{ ...rowStyle, borderBottom: "none" }}>
+            <div style={{ flex: 1 }}><div style={labelStyle}>远程端口</div><div style={descStyle}>服务器上暴露的端口号</div></div>
+            <Input size="small" style={{ width: 100 }} type="number" placeholder="如 13000" value={String(config.remotePort || "")} onChange={v => update("remotePort", Number(v))} />
+          </div>
+        )}
+      </Card>
+
+      {/* 部署说明 */}
+      <Card bodyStyle={{ padding: "16px" }} style={{ borderRadius: 10, background: "var(--semi-color-fill-0)" }}>
+        <Text strong size="small" style={{ display: "block", marginBottom: 8 }}>自建 FRP 服务器</Text>
+        <pre style={{ margin: 0, padding: "10px 12px", borderRadius: 6, background: "var(--semi-color-bg-1)", border: "1px solid var(--semi-color-border)", fontSize: 11, fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-all", color: "var(--semi-color-text-1)" }}>{`# SSH 到 Linux 服务器执行：
+cd /opt && wget -qO- https://github.com/fatedier/frp/releases/download/v0.67.0/frp_0.67.0_linux_amd64.tar.gz | tar xz
+cd frp_0.67.0_linux_amd64
+
+# 写配置（改密码）
+cat > frps.toml << 'EOF'
+bindPort = 7000
+auth.token = "你的密码"
+vhostHTTPPort = 8080
+EOF
+
+# 启动
+./frps -c frps.toml &
+
+# 云控制台开放 7000 + 8080 端口
+# 将 IP、端口、密码填入上方配置保存即可`}</pre>
       </Card>
     </div>
   );

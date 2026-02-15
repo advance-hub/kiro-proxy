@@ -584,12 +584,10 @@ func (a *App) OneClickStart() (string, error) {
 
 	// 2. Refresh token
 	if _, err := os.Stat(credsPath); err == nil {
-		data, _ := os.ReadFile(credsPath)
-		var cf CredentialsFile
-		if json.Unmarshal(data, &cf) == nil {
-			refreshed, err := refreshCredentials(&cf)
+		if cf, readErr := readFirstCredential(credsPath); readErr == nil {
+			refreshed, err := refreshCredentials(cf)
 			if err == nil {
-				saveCredentialsFile(refreshed)
+				saveCredentialsFileSmart(refreshed)
 			} else {
 				fmt.Fprintf(os.Stderr, "Token 刷新失败 (不影响启动): %v\n", err)
 			}
@@ -623,12 +621,9 @@ func (a *App) GetCredentialsInfo() (CredentialsInfo, error) {
 	source := "none"
 	var cf *CredentialsFile
 
-	if data, err := os.ReadFile(credsPath); err == nil {
-		var c CredentialsFile
-		if json.Unmarshal(data, &c) == nil {
-			source = "file"
-			cf = &c
-		}
+	if c, readErr := readFirstCredential(credsPath); readErr == nil {
+		source = "file"
+		cf = c
 	}
 
 	if cf == nil {
@@ -753,20 +748,16 @@ func (a *App) RefreshNow() (string, error) {
 		return "", fmt.Errorf("凭据文件不存在")
 	}
 
-	data, err := os.ReadFile(credsPath)
+	cf, err := readFirstCredential(credsPath)
 	if err != nil {
 		return "", fmt.Errorf("读取凭据失败: %v", err)
 	}
-	var cf CredentialsFile
-	if err := json.Unmarshal(data, &cf); err != nil {
-		return "", fmt.Errorf("解析凭据失败: %v", err)
-	}
 
-	refreshed, err := refreshCredentials(&cf)
+	refreshed, err := refreshCredentials(cf)
 	if err != nil {
 		return "", err
 	}
-	saveCredentialsFile(refreshed)
+	saveCredentialsFileSmart(refreshed)
 	return fmt.Sprintf("Token 已刷新，有效期至 %s", refreshed.ExpiresAt), nil
 }
 
@@ -1099,6 +1090,88 @@ func saveCredentialsFile(creds *CredentialsFile) error {
 	path := filepath.Join(dir, "credentials.json")
 	data, _ := json.MarshalIndent(creds, "", "  ")
 	return os.WriteFile(path, data, 0644)
+}
+
+// saveCredentialsFileSmart 智能写入 credentials.json
+//
+// 如果现有文件是数组格式（多凭据），则替换第一个凭据（保留其他凭据不变）。
+// 如果现有文件是单对象格式或不存在，则直接写入单对象。
+func saveCredentialsFileSmart(creds *CredentialsFile) error {
+	dir, err := getDataDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "credentials.json")
+
+	// 尝试读取现有文件，判断格式
+	existing, readErr := os.ReadFile(path)
+	if readErr == nil && len(existing) > 0 {
+		trimmed := strings.TrimSpace(string(existing))
+		if len(trimmed) > 0 && trimmed[0] == '[' {
+			// 数组格式：解析为 []map，替换第一个条目
+			var arr []map[string]interface{}
+			if json.Unmarshal(existing, &arr) == nil {
+				// 将新凭据序列化为 map
+				newData, _ := json.Marshal(creds)
+				var newMap map[string]interface{}
+				json.Unmarshal(newData, &newMap)
+
+				if len(arr) > 0 {
+					// 替换第一个条目（保留其 id 和 priority）
+					if id, ok := arr[0]["id"]; ok {
+						newMap["id"] = id
+					}
+					if priority, ok := arr[0]["priority"]; ok {
+						newMap["priority"] = priority
+					}
+					arr[0] = newMap
+				} else {
+					arr = append(arr, newMap)
+				}
+
+				data, _ := json.MarshalIndent(arr, "", "  ")
+				return os.WriteFile(path, data, 0644)
+			}
+		}
+	}
+
+	// 单对象格式或文件不存在：直接写入
+	data, _ := json.MarshalIndent(creds, "", "  ")
+	return os.WriteFile(path, data, 0644)
+}
+
+// readFirstCredential 从 credentials.json 读取第一个凭据
+//
+// 支持单对象和数组格式。数组格式时返回第一个元素。
+func readFirstCredential(path string) (*CredentialsFile, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	trimmed := strings.TrimSpace(string(data))
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("凭据文件为空")
+	}
+
+	if trimmed[0] == '[' {
+		// 数组格式
+		var arr []CredentialsFile
+		if err := json.Unmarshal(data, &arr); err != nil {
+			return nil, fmt.Errorf("解析凭据数组失败: %v", err)
+		}
+		if len(arr) == 0 {
+			return nil, fmt.Errorf("凭据数组为空")
+		}
+		return &arr[0], nil
+	}
+
+	// 单对象格式
+	var cf CredentialsFile
+	if err := json.Unmarshal(data, &cf); err != nil {
+		return nil, fmt.Errorf("解析凭据失败: %v", err)
+	}
+	return &cf, nil
 }
 
 // ── Activation ──

@@ -171,6 +171,7 @@ export namespace main {
 	    customDomain: string;
 	    remotePort?: number;
 	    proxyType: string;
+	    vhostHTTPPort?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new TunnelConfig(source);
@@ -186,6 +187,7 @@ export namespace main {
 	        this.customDomain = source["customDomain"];
 	        this.remotePort = source["remotePort"];
 	        this.proxyType = source["proxyType"];
+	        this.vhostHTTPPort = source["vhostHTTPPort"];
 	    }
 	}
 	export class TunnelStatus {

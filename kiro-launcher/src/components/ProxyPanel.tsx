@@ -35,6 +35,13 @@ export default function ProxyPanel() {
 
   useEffect(() => { refreshStatus(); const t = setInterval(refreshStatus, 3000); return () => clearInterval(t); }, [refreshStatus]);
 
+  // 代理运行时自动拉取模型列表
+  useEffect(() => {
+    if (status?.running && models.length === 0 && !modelsLoading) {
+      fetchModels(host, port, apiKey);
+    }
+  }, [status?.running]);
+
   const wrap = async (key: string, fn: () => Promise<void>) => {
     setLoading(key);
     try { await fn(); } catch (e) { Toast.error({ content: String(e) }); } finally { setLoading(""); }
@@ -126,20 +133,26 @@ export default function ProxyPanel() {
         </div>
       </Card>
 
-      {models.length > 0 && (
+      {running && (
         <Card bodyStyle={{ padding: "14px 20px" }} style={{ marginBottom: 12, borderRadius: 10 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <Space><IconInfoCircle style={{ color: "var(--semi-color-text-2)" }} /><Text strong>可用模型</Text><Tag size="small" color="blue" type="light">{models.length}</Tag></Space>
+            <Space><IconInfoCircle style={{ color: "var(--semi-color-text-2)" }} /><Text strong>可用模型</Text>{models.length > 0 && <Tag size="small" color="blue" type="light">{models.length}</Tag>}</Space>
             <Button size="small" theme="borderless" type="tertiary" icon={<IconRefresh />} loading={modelsLoading} onClick={() => fetchModels(host, port, apiKey)}>刷新</Button>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {models.map((m) => (
-              <div key={m.id} style={{ padding: "8px 12px", borderRadius: 6, background: "var(--semi-color-fill-0)", border: "1px solid var(--semi-color-border)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}><Text strong size="small">{m.display_name}</Text><Tag size="small" color="green" type="light">{m.type}</Tag></div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Text type="tertiary" size="small" style={{ fontFamily: "monospace" }}>{m.id}</Text><Text type="tertiary" size="small">|</Text><Text type="tertiary" size="small">{m.owned_by}</Text><Text type="tertiary" size="small">|</Text><Text type="tertiary" size="small">max: {m.max_tokens.toLocaleString()}</Text></div>
-              </div>
-            ))}
-          </div>
+          {models.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {models.map((m) => (
+                <div key={m.id} style={{ padding: "8px 12px", borderRadius: 6, background: "var(--semi-color-fill-0)", border: "1px solid var(--semi-color-border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}><Text strong size="small">{m.display_name}</Text><Tag size="small" color="green" type="light">{m.type}</Tag></div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Text type="tertiary" size="small" style={{ fontFamily: "monospace" }}>{m.id}</Text><Text type="tertiary" size="small">|</Text><Text type="tertiary" size="small">{m.owned_by}</Text><Text type="tertiary" size="small">|</Text><Text type="tertiary" size="small">max: {m.max_tokens.toLocaleString()}</Text></div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", padding: "12px 0" }}>
+              <Text type="tertiary" size="small">{modelsLoading ? "正在加载模型列表..." : "点击刷新获取模型列表"}</Text>
+            </div>
+          )}
         </Card>
       )}
 

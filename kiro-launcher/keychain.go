@@ -300,12 +300,6 @@ func readKiroCredentials() (*KeychainCredentials, error) {
 }
 
 func writeKeychainCredentials(creds *KeychainCredentials) error {
-	dir, err := getDataDir()
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(dir, "credentials.json")
-
 	hasDevice := creds.Device != nil && creds.Device.ClientID != "" && creds.Device.ClientSecret != ""
 	authMethod := "social"
 	if hasDevice {
@@ -318,7 +312,7 @@ func writeKeychainCredentials(creds *KeychainCredentials) error {
 		clientSecret = &creds.Device.ClientSecret
 	}
 
-	cf := CredentialsFile{
+	cf := &CredentialsFile{
 		AccessToken:  &creds.Token.AccessToken,
 		RefreshToken: creds.Token.RefreshToken,
 		ExpiresAt:    creds.Token.ExpiresAt,
@@ -328,6 +322,5 @@ func writeKeychainCredentials(creds *KeychainCredentials) error {
 		Region:       &creds.Token.Region,
 	}
 
-	data, _ := json.MarshalIndent(cf, "", "  ")
-	return os.WriteFile(path, data, 0644)
+	return saveCredentialsFileSmart(cf)
 }
