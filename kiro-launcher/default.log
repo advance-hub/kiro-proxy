@@ -1,0 +1,38 @@
+2026-02-15 19:27:08.281 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:27:08.699 [E] [client/service.go:320] token in login doesn't match token from configuration
+2026-02-15 19:27:08.700 [W] [client/service.go:338] connect to server error: token in login doesn't match token from configuration
+2026-02-15 19:27:18.160 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:27:18.302 [E] [client/service.go:320] token in login doesn't match token from configuration
+2026-02-15 19:27:18.302 [W] [client/service.go:338] connect to server error: token in login doesn't match token from configuration
+2026-02-15 19:27:19.802 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:27:19.889 [E] [client/service.go:320] token in login doesn't match token from configuration
+2026-02-15 19:27:19.889 [W] [client/service.go:338] connect to server error: token in login doesn't match token from configuration
+2026-02-15 19:30:30.098 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:30:30.273 [E] [client/service.go:320] token in login doesn't match token from configuration
+2026-02-15 19:30:30.273 [W] [client/service.go:338] connect to server error: token in login doesn't match token from configuration
+2026-02-15 19:30:34.471 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:30:34.555 [E] [client/service.go:320] token in login doesn't match token from configuration
+2026-02-15 19:30:34.556 [W] [client/service.go:338] connect to server error: token in login doesn't match token from configuration
+2026-02-15 19:39:34.376 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:39:34.463 [E] [client/service.go:320] token in login doesn't match token from configuration
+2026-02-15 19:39:34.464 [W] [client/service.go:338] connect to server error: token in login doesn't match token from configuration
+2026-02-15 19:43:00.865 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:43:00.975 [I] [client/service.go:327] [6e1044ce68c308b1] login to server success, get run id [6e1044ce68c308b1]
+2026-02-15 19:43:00.976 [I] [proxy/proxy_manager.go:180] [6e1044ce68c308b1] proxy added: [kiro-proxy]
+2026-02-15 19:43:01.012 [I] [client/control.go:172] [6e1044ce68c308b1] [kiro-proxy] start proxy success
+2026-02-15 19:44:15.825 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:44:15.931 [I] [client/service.go:327] [801dbf0ac0b57c76] login to server success, get run id [801dbf0ac0b57c76]
+2026-02-15 19:44:15.931 [I] [proxy/proxy_manager.go:180] [801dbf0ac0b57c76] proxy added: [kiro-proxy]
+2026-02-15 19:44:15.963 [I] [client/control.go:172] [801dbf0ac0b57c76] [kiro-proxy] start proxy success
+2026-02-15 19:47:19.241 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:47:19.493 [I] [client/service.go:327] [abc6cb7d59fcdf1c] login to server success, get run id [abc6cb7d59fcdf1c]
+2026-02-15 19:47:19.493 [I] [proxy/proxy_manager.go:180] [abc6cb7d59fcdf1c] proxy added: [kiro-proxy]
+2026-02-15 19:47:19.521 [I] [client/control.go:172] [abc6cb7d59fcdf1c] [kiro-proxy] start proxy success
+2026-02-15 19:52:42.816 [I] [client/service.go:335] try to connect to server...
+2026-02-15 19:52:42.901 [I] [client/service.go:327] [0067e2d31001de49] login to server success, get run id [0067e2d31001de49]
+2026-02-15 19:52:42.901 [I] [proxy/proxy_manager.go:180] [0067e2d31001de49] proxy added: [kiro-proxy]
+2026-02-15 19:52:42.927 [I] [client/control.go:172] [0067e2d31001de49] [kiro-proxy] start proxy success
+2026-02-15 20:08:06.547 [I] [client/service.go:335] try to connect to server...
+2026-02-15 20:08:06.641 [I] [client/service.go:327] [b989940295b56c4d] login to server success, get run id [b989940295b56c4d]
+2026-02-15 20:08:06.641 [I] [proxy/proxy_manager.go:180] [b989940295b56c4d] proxy added: [kiro-proxy]
+2026-02-15 20:08:06.675 [I] [client/control.go:172] [b989940295b56c4d] [kiro-proxy] start proxy success

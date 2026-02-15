@@ -1,0 +1,237 @@
+import React, { useState, useEffect, useCallback } from "react";
+import { Button, Card, Input, Typography, Toast, Space, Select, Switch, Tag } from "@douyinfe/semi-ui";
+import { IconRefresh, IconSave, IconPlay, IconStop, IconLink } from "@douyinfe/semi-icons";
+
+const { Text } = Typography;
+
+interface TunnelConfig {
+  enabled: boolean;
+  serverAddr: string;
+  serverPort: number;
+  token: string;
+  proxyName: string;
+  customDomain: string;
+  remotePort?: number;
+  proxyType: string;
+}
+
+interface TunnelStatus {
+  running: boolean;
+  publicUrl: string;
+  error?: string;
+}
+
+const wails = () => {
+  if (!window.go?.main?.App) throw new Error("Wails runtime 尚未就绪");
+  return window.go.main.App;
+};
+
+export default function TunnelPanel() {
+  const [config, setConfig] = useState<TunnelConfig>({
+    enabled: false,
+    serverAddr: "117.72.183.248",
+    serverPort: 7000,
+    token: "",
+    proxyName: "kiro-proxy",
+    customDomain: "",
+    proxyType: "http",
+  });
+  const [status, setStatus] = useState<TunnelStatus>({ running: false, publicUrl: "" });
+  const [loading, setLoading] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const cfg = await wails().LoadTunnelConfig() as TunnelConfig;
+      setConfig(cfg);
+      setDirty(false);
+    } catch (e) {
+      Toast.error({ content: String(e) });
+    }
+  }, []);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const s = await wails().GetTunnelStatus() as TunnelStatus;
+      setStatus(s);
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConfig();
+    loadStatus();
+    const timer = setInterval(loadStatus, 3000);
+    return () => clearInterval(timer);
+  }, [loadConfig, loadStatus]);
+
+  const update = (key: keyof TunnelConfig, value: any) => {
+    setConfig(prev => ({ ...prev, [key]: value }));
+    setDirty(true);
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const msg = await wails().SaveTunnelConfig(config);
+      Toast.success({ content: msg });
+      setDirty(false);
+    } catch (e) {
+      Toast.error({ content: String(e) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStart = async () => {
+    setLoading(true);
+    try {
+      const msg = await wails().StartTunnel();
+      Toast.success({ content: msg });
+      loadStatus();
+    } catch (e) {
+      Toast.error({ content: String(e) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStop = async () => {
+    setLoading(true);
+    try {
+      const msg = await wails().StopTunnel();
+      Toast.success({ content: msg });
+      loadStatus();
+    } catch (e) {
+      Toast.error({ content: String(e) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const labelStyle: React.CSSProperties = { fontSize: 13, color: "var(--semi-color-text-1)", fontWeight: 500 };
+  const descStyle: React.CSSProperties = { fontSize: 11, color: "var(--semi-color-text-2)", marginTop: 2 };
+  const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--semi-color-border)" };
+
+  return (
+    <div style={{ padding: "20px 24px 32px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <Text strong style={{ fontSize: 18, display: "block" }}>内网穿透</Text>
+          <Text type="tertiary" size="small">通过 FRP 将本地代理暴露到公网，供 Cursor 等工具使用</Text>
+        </div>
+        <Space>
+          <Button size="small" theme="borderless" icon={<IconRefresh />} onClick={() => { loadConfig(); loadStatus(); }}>刷新</Button>
+          <Button size="small" theme="solid" type="primary" icon={<IconSave />} loading={loading} disabled={!dirty} onClick={handleSave}>保存</Button>
+        </Space>
+      </div>
+
+      {/* 状态卡片 */}
+      <Card bodyStyle={{ padding: "16px" }} style={{ borderRadius: 10, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 10, height: 10, borderRadius: "50%",
+              background: status.running ? "#52c41a" : "#999",
+              boxShadow: status.running ? "0 0 8px #52c41a" : "none"
+            }} />
+            <div>
+              <Text strong>{status.running ? "穿透运行中" : "穿透未启动"}</Text>
+              {status.publicUrl && (
+                <div style={{ marginTop: 4 }}>
+                  <Tag color="blue" style={{ cursor: "pointer" }} onClick={() => {
+                    navigator.clipboard.writeText(status.publicUrl + "/v1");
+                    Toast.success({ content: "已复制公网地址" });
+                  }}>
+                    <IconLink style={{ marginRight: 4 }} />
+                    {status.publicUrl}/v1
+                  </Tag>
+                </div>
+              )}
+              {status.error && <Text type="danger" size="small" style={{ display: "block", marginTop: 4 }}>{status.error}</Text>}
+            </div>
+          </div>
+          <Space>
+            {status.running ? (
+              <Button type="danger" icon={<IconStop />} loading={loading} onClick={handleStop}>停止穿透</Button>
+            ) : (
+              <Button type="primary" theme="solid" icon={<IconPlay />} loading={loading} onClick={handleStart}>启动穿透</Button>
+            )}
+          </Space>
+        </div>
+      </Card>
+
+      {/* 配置卡片 */}
+      <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10, marginBottom: 12 }}>
+        <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>基础配置</Text>
+        
+        <div style={rowStyle}>
+          <div><div style={labelStyle}>启用穿透</div><div style={descStyle}>开启后可将本地代理暴露到公网</div></div>
+          <Switch checked={config.enabled} onChange={v => update("enabled", v)} />
+        </div>
+
+        <div style={rowStyle}>
+          <div><div style={labelStyle}>穿透类型</div><div style={descStyle}>HTTP 需要域名，TCP 使用端口</div></div>
+          <Select size="small" style={{ width: 120 }} value={config.proxyType} onChange={v => update("proxyType", v)}>
+            <Select.Option value="http">HTTP</Select.Option>
+            <Select.Option value="tcp">TCP</Select.Option>
+          </Select>
+        </div>
+
+        <div style={{ ...rowStyle, borderBottom: "none" }}>
+          <div><div style={labelStyle}>代理名称</div><div style={descStyle}>FRP 代理标识名</div></div>
+          <Input size="small" style={{ width: 180 }} value={config.proxyName} onChange={v => update("proxyName", v)} />
+        </div>
+      </Card>
+
+      <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10, marginBottom: 12 }}>
+        <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>FRP 服务器</Text>
+        
+        <div style={rowStyle}>
+          <div><div style={labelStyle}>服务器地址</div><div style={descStyle}>FRP 服务端 IP 或域名</div></div>
+          <Input size="small" style={{ width: 180 }} value={config.serverAddr} onChange={v => update("serverAddr", v)} />
+        </div>
+
+        <div style={rowStyle}>
+          <div><div style={labelStyle}>服务器端口</div><div style={descStyle}>FRP 服务端通信端口</div></div>
+          <Input size="small" style={{ width: 120 }} type="number" value={String(config.serverPort)} onChange={v => update("serverPort", parseInt(v) || 7000)} />
+        </div>
+
+        <div style={{ ...rowStyle, borderBottom: "none" }}>
+          <div><div style={labelStyle}>认证 Token</div><div style={descStyle}>与服务端配置的 token 一致</div></div>
+          <Input size="small" style={{ width: 180 }} type="password" value={config.token} onChange={v => update("token", v)} placeholder="your_secure_token" />
+        </div>
+      </Card>
+
+      {config.proxyType === "http" ? (
+        <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10 }}>
+          <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>HTTP 穿透配置</Text>
+          <div style={{ ...rowStyle, borderBottom: "none" }}>
+            <div><div style={labelStyle}>自定义域名</div><div style={descStyle}>需解析到 FRP 服务器 IP</div></div>
+            <Input size="small" style={{ width: 220 }} value={config.customDomain} onChange={v => update("customDomain", v)} placeholder="kiro-proxy.example.com" />
+          </div>
+        </Card>
+      ) : (
+        <Card bodyStyle={{ padding: "4px 16px" }} style={{ borderRadius: 10 }}>
+          <Text strong size="small" style={{ display: "block", padding: "10px 0 4px", color: "var(--semi-color-primary)" }}>TCP 穿透配置</Text>
+          <div style={{ ...rowStyle, borderBottom: "none" }}>
+            <div><div style={labelStyle}>远程端口</div><div style={descStyle}>服务器上暴露的端口</div></div>
+            <Input size="small" style={{ width: 120 }} type="number" value={String(config.remotePort || 13000)} onChange={v => update("remotePort", parseInt(v) || 13000)} />
+          </div>
+        </Card>
+      )}
+
+      {/* 使用说明 */}
+      <Card bodyStyle={{ padding: "16px" }} style={{ borderRadius: 10, marginTop: 16, background: "var(--semi-color-fill-0)" }}>
+        <Text strong size="small" style={{ display: "block", marginBottom: 8 }}>使用说明</Text>
+        <Text type="tertiary" size="small" style={{ lineHeight: 1.8 }}>
+          1. 确保 FRP 服务端已运行，且 token 配置正确<br />
+          2. HTTP 模式需要将域名 DNS 解析到 FRP 服务器 IP<br />
+          3. 启动穿透后，Cursor 等工具可使用公网地址访问<br />
+          4. 公网地址格式：http://域名:8080/v1 (HTTP) 或 http://IP:端口/v1 (TCP)
+        </Text>
+      </Card>
+    </div>
+  );
+}

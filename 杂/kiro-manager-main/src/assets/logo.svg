@@ -1,0 +1,58 @@
+<svg viewBox="0 0 512 512" width="512" height="512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#9333ea;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#7c3aed;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6b21a8;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- 外发光 -->
+    <filter id="outerGlow">
+      <feGaussianBlur stdDeviation="16" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- 内发光 -->
+    <filter id="innerGlow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- 背景圆角矩形 -->
+  <rect x="32" y="32" width="448" height="448" rx="112" ry="112" 
+        fill="url(#bgGradient)" 
+        filter="url(#outerGlow)" />
+  
+  <!-- 幽灵主体 -->
+  <g filter="url(#innerGlow)" transform="translate(0, -15)">
+    <!-- 头部和身体，底部三个半圆形凸起 -->
+    <path d="M256 120 
+             C192 120 144 168 144 232 
+             L144 380
+             A40 40 0 0 0 184 420
+             A40 40 0 0 0 224 380
+             A40 40 0 0 0 264 420
+             A40 40 0 0 0 304 380
+             A40 40 0 0 0 344 420
+             A40 40 0 0 0 384 380
+             L384 232 
+             C384 168 336 120 256 120 Z" 
+          fill="white" />
+  
+    <!-- 左眼 -->
+    <rect x="200" y="232" width="32" height="56" rx="8" ry="8" fill="#1e293b" />
+    <ellipse cx="208" cy="244" rx="8" ry="12" fill="#0f172a" opacity="0.5" />
+    
+    <!-- 右眼 -->
+    <rect x="280" y="232" width="32" height="56" rx="8" ry="8" fill="#1e293b" />
+    <ellipse cx="304" cy="244" rx="8" ry="12" fill="#0f172a" opacity="0.5" />
+  </g>
+</svg>

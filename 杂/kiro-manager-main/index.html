@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>账号管理器</title>
+    <link rel="stylesheet" href="https://unpkg.com/@1ing/liteui/dist/lite-ui.css">
+    <link rel="stylesheet" href="/src/styles.css" />
+    <style>
+      /* 骨架屏样式 */
+      #app-skeleton {
+        width: 100%;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-main, #ffffff);
+        overflow: hidden;
+      }
+      
+      .skeleton-titlebar {
+        height: 32px;
+        background: var(--bg-main, #ffffff);
+        border-bottom: 1px solid var(--border-color, #e5e7eb);
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        justify-content: space-between;
+      }
+      
+      .skeleton-titlebar-left {
+        height: 16px;
+        width: 100px;
+        border-radius: 4px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-titlebar-right {
+        display: flex;
+        gap: 8px;
+      }
+      
+      .skeleton-titlebar-btn {
+        width: 32px;
+        height: 20px;
+        border-radius: 4px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-body {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+      
+      .skeleton-sidebar {
+        width: 200px;
+        background: var(--bg-sidebar, #f8f9fa);
+        border-right: 1px solid var(--border-color, #e5e7eb);
+        display: flex;
+        flex-direction: column;
+        padding: 16px;
+      }
+      
+      .skeleton-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+      
+      .skeleton-logo {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-title {
+        flex: 1;
+        height: 20px;
+        border-radius: 4px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-nav {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      
+      .skeleton-nav-item {
+        height: 40px;
+        border-radius: 8px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-footer {
+        height: 100px;
+        border-radius: 8px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 24px;
+      }
+      
+      .skeleton-toolbar {
+        height: 48px;
+        margin-bottom: 24px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      
+      .skeleton-search {
+        flex: 1;
+        height: 48px;
+        border-radius: 8px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-btn {
+        width: 80px;
+        height: 48px;
+        border-radius: 8px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-actions {
+        height: 48px;
+        margin-bottom: 16px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      
+      .skeleton-checkbox {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-action-btn {
+        width: 60px;
+        height: 36px;
+        border-radius: 6px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-view-btns {
+        margin-left: auto;
+        display: flex;
+        gap: 8px;
+      }
+      
+      .skeleton-view-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        background: var(--border-color, #e5e7eb);
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      .skeleton-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+      
+      .skeleton-card {
+        height: 180px;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        animation: skeleton-loading 1.5s ease-in-out infinite;
+      }
+      
+      @keyframes skeleton-loading {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+      
+      /* 深色模式 */
+      html.dark #app-skeleton {
+        background: #0f172a;
+      }
+      
+      html.dark .skeleton-titlebar {
+        background: #0f172a;
+        border-bottom-color: #334155;
+      }
+      
+      html.dark .skeleton-sidebar {
+        background: #1e293b;
+        border-right-color: #334155;
+      }
+      
+      html.dark .skeleton-main {
+        background: #0f172a;
+      }
+      
+      html.dark .skeleton-card {
+        background: #1e293b;
+        border-color: #334155;
+      }
+    </style>
+  </head>
+
+  <body class="ui-base">
+    <div id="app">
+      <!-- 骨架屏 -->
+      <div id="app-skeleton">
+        <div class="skeleton-titlebar">
+          <div class="skeleton-titlebar-left"></div>
+          <div class="skeleton-titlebar-right">
+            <div class="skeleton-titlebar-btn"></div>
+            <div class="skeleton-titlebar-btn"></div>
+          </div>
+        </div>
+        <div class="skeleton-body">
+          <div class="skeleton-sidebar">
+            <div class="skeleton-header">
+              <div class="skeleton-logo"></div>
+              <div class="skeleton-title"></div>
+            </div>
+            <div class="skeleton-nav">
+              <div class="skeleton-nav-item"></div>
+              <div class="skeleton-nav-item"></div>
+            </div>
+            <div class="skeleton-footer"></div>
+          </div>
+          <div class="skeleton-main">
+            <div class="skeleton-toolbar">
+              <div class="skeleton-search"></div>
+              <div class="skeleton-btn"></div>
+              <div class="skeleton-btn"></div>
+              <div class="skeleton-btn"></div>
+            </div>
+            <div class="skeleton-actions">
+              <div class="skeleton-checkbox"></div>
+              <div class="skeleton-action-btn"></div>
+              <div class="skeleton-action-btn"></div>
+              <div class="skeleton-action-btn"></div>
+              <div class="skeleton-view-btns">
+                <div class="skeleton-view-btn"></div>
+                <div class="skeleton-view-btn"></div>
+              </div>
+            </div>
+            <div class="skeleton-grid" id="skeleton-grid">
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 根据 localStorage 调整骨架屏 -->
+    <script>
+      (function() {
+        try {
+          // 检测主题 - 1in-ui 使用 'ui-theme' 键，并在 html 元素上添加 dark 类
+          const theme = localStorage.getItem('ui-theme') || localStorage.getItem('theme') || 'light';
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          }
+          
+          // 调整视图模式
+          const settings = JSON.parse(localStorage.getItem('settings') || '{}');
+          const viewMode = settings.viewMode || 'grid';
+          const skeletonGrid = document.getElementById('skeleton-grid');
+          
+          if (viewMode === 'list' && skeletonGrid) {
+            skeletonGrid.style.gridTemplateColumns = '1fr';
+            skeletonGrid.style.gap = '12px';
+            const cards = skeletonGrid.querySelectorAll('.skeleton-card');
+            cards.forEach(card => {
+              card.style.height = '72px';
+            });
+          }
+        } catch (e) {
+          console.error('加载骨架屏设置失败:', e);
+        }
+      })();
+    </script>
+    
+    <script src="https://unpkg.com/@1ing/liteui/dist/lite-ui.min.js" defer></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

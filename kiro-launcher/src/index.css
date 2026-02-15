@@ -41,8 +41,9 @@ body[theme-mode="dark"] .app-header {
   border-bottom-color: #333 !important;
 }
 
-body[theme-mode="dark"] .app-tabs {
+body[theme-mode="dark"] .app-sidebar {
   background: #242424 !important;
+  border-right-color: #333 !important;
 }
 
 body[theme-mode="dark"] .semi-card {

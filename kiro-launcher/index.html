@@ -4,9 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kiro Launcher</title>
+    <script>
+      // Polyfill: WebView2 某些版本 matchMedia 返回 null，导致 Semi UI 崩溃
+      (function() {
+        var orig = window.matchMedia;
+        if (!orig) {
+          window.matchMedia = function() {
+            return { matches: false, media: '', addListener: function(){}, removeListener: function(){}, addEventListener: function(){}, removeEventListener: function(){}, dispatchEvent: function(){ return false; } };
+          };
+          return;
+        }
+        window.matchMedia = function(q) {
+          var r = orig.call(window, q);
+          if (!r) {
+            return { matches: false, media: q || '', addListener: function(){}, removeListener: function(){}, addEventListener: function(){}, removeEventListener: function(){}, dispatchEvent: function(){ return false; } };
+          }
+          return r;
+        };
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <div id="error-overlay" style="display:none;position:fixed;inset:0;background:#1a1a1a;color:#ff6b6b;padding:24px;font-family:monospace;font-size:13px;white-space:pre-wrap;overflow:auto;z-index:99999"></div>
+    <script>
+      window.onerror = function(msg, src, line, col, err) {
+        var el = document.getElementById('error-overlay');
+        el.style.display = 'block';
+        el.textContent = '[JS Error] ' + msg + '\nSource: ' + src + ':' + line + ':' + col + '\n' + (err && err.stack || '');
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        var el = document.getElementById('error-overlay');
+        el.style.display = 'block';
+        el.textContent += '\n[Unhandled Promise] ' + (e.reason && e.reason.stack || e.reason || e);
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

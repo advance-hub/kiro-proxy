@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "kiro.rs",
-    "kiro-launcher/src-tauri",
 ]
 resolver = "2"
 

@@ -4,6 +4,16 @@ node_modules
 .env.development.local
 .env.test.local
 .env.production.local
-src-tauri
 dist
 target
+
+# Wails build output
+kiro-launcher/build/
+
+# Embedded sidecar binaries (built by build.sh)
+kiro-launcher/sidecar/kiro-rs
+kiro-launcher/sidecar/kiro-rs.exe
+
+# OS files
+.DS_Store
+Thumbs.db
