@@ -426,7 +426,7 @@ func (a *App) resolveBinary() (string, error) {
 		return p, nil
 	}
 
-	return "", fmt.Errorf("找不到 kiro-rs 二进制，请先 build kiro.rs 项目")
+	return "", fmt.Errorf("代理服务初始化失败")
 }
 
 func (a *App) pushLog(line string) {
@@ -492,7 +492,7 @@ func (a *App) startProxyInternal(configPath, credsPath string) error {
 	stderr, _ := cmd.StderrPipe()
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动 kiro-rs 失败: %v", err)
+		return fmt.Errorf("代理服务启动失败，可能端口已被占用")
 	}
 
 	a.spawnReader(stdout)

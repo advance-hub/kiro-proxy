@@ -30,6 +30,10 @@ export function ClearCredentials() {
   return window['go']['main']['App']['ClearCredentials']();
 }
 
+export function ClearExternalTunnel() {
+  return window['go']['main']['App']['ClearExternalTunnel']();
+}
+
 export function Deactivate() {
   return window['go']['main']['App']['Deactivate']();
 }
@@ -140,6 +144,10 @@ export function SaveCredentialsRaw(arg1) {
 
 export function SaveTunnelConfig(arg1) {
   return window['go']['main']['App']['SaveTunnelConfig'](arg1);
+}
+
+export function SetExternalTunnel(arg1) {
+  return window['go']['main']['App']['SetExternalTunnel'](arg1);
 }
 
 export function StartProxy() {

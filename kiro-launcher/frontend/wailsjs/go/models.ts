@@ -164,6 +164,7 @@ export namespace main {
 	}
 	export class TunnelConfig {
 	    enabled: boolean;
+	    tunnelMode: string;
 	    serverAddr: string;
 	    serverPort: number;
 	    token: string;
@@ -172,6 +173,7 @@ export namespace main {
 	    remotePort?: number;
 	    proxyType: string;
 	    vhostHTTPPort?: number;
+	    externalUrl?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new TunnelConfig(source);
@@ -180,6 +182,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
+	        this.tunnelMode = source["tunnelMode"];
 	        this.serverAddr = source["serverAddr"];
 	        this.serverPort = source["serverPort"];
 	        this.token = source["token"];
@@ -188,6 +191,7 @@ export namespace main {
 	        this.remotePort = source["remotePort"];
 	        this.proxyType = source["proxyType"];
 	        this.vhostHTTPPort = source["vhostHTTPPort"];
+	        this.externalUrl = source["externalUrl"];
 	    }
 	}
 	export class TunnelStatus {

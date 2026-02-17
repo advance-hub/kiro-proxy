@@ -17,3 +17,4 @@ kiro-launcher/sidecar/kiro-rs.exe
 # OS files
 .DS_Store
 Thumbs.db
+release

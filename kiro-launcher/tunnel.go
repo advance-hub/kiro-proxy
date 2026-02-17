@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -18,6 +19,7 @@ import (
 // TunnelConfig 穿透配置
 type TunnelConfig struct {
 	Enabled       bool   `json:"enabled"`
+	TunnelMode    string `json:"tunnelMode"` // frp / external
 	ServerAddr    string `json:"serverAddr"`
 	ServerPort    int    `json:"serverPort"`
 	Token         string `json:"token"`
@@ -26,6 +28,7 @@ type TunnelConfig struct {
 	RemotePort    int    `json:"remotePort,omitempty"`    // TCP 模式用
 	ProxyType     string `json:"proxyType"`               // http / tcp
 	VhostHTTPPort int    `json:"vhostHTTPPort,omitempty"` // HTTP 模式服务端 vhost 端口，默认 8080
+	ExternalUrl   string `json:"externalUrl,omitempty"`   // 外部穿透地址（如 d4mpfjxfo0wb.vip3.xiaomiqiu123.top）
 }
 
 // TunnelStatus 穿透状态
@@ -101,6 +104,7 @@ func (a *App) SaveTunnelConfig(cfg TunnelConfig) (string, error) {
 func defaultTunnelConfig() TunnelConfig {
 	return TunnelConfig{
 		Enabled:       false,
+		TunnelMode:    "frp",
 		ServerAddr:    "",
 		ServerPort:    7000,
 		Token:         "",
@@ -108,6 +112,7 @@ func defaultTunnelConfig() TunnelConfig {
 		CustomDomain:  "",
 		ProxyType:     "http",
 		VhostHTTPPort: 8080,
+		ExternalUrl:   "",
 	}
 }
 
@@ -116,11 +121,80 @@ func isOfficialTunnelServer(cfg TunnelConfig) bool {
 	return cfg.ServerAddr == "117.72.183.248" || cfg.CustomDomain == "kiro-proxy.advance123.cn"
 }
 
+// SetExternalTunnel 设置外部穿透地址
+func (a *App) SetExternalTunnel(url string) (string, error) {
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return "", fmt.Errorf("请输入穿透地址")
+	}
+
+	// 使用正则提取有效的 URL 部分：协议(可选) + 域名/IP + 端口(可选) + 路径(可选)
+	// 支持: example.com 或 example.com:8080 或 http://example.com 等
+	re := regexp.MustCompile(`^(?:(https?://))?([a-zA-Z0-9][-a-zA-Z0-9.]*[a-zA-Z0-9]|[0-9.]+)(?::(\d+))?(?:/.*)?$`)
+	matches := re.FindStringSubmatch(url)
+
+	if matches == nil {
+		return "", fmt.Errorf("URL 格式不正确，请输入域名或 IP，如: example.com 或 example.com:8080")
+	}
+
+	// 重组 URL: 协议 + 域名 + 端口(可选)，忽略路径
+	protocol := matches[1]
+	if protocol == "" {
+		protocol = "http://"
+	}
+	domain := matches[2]
+	port := matches[3]
+
+	publicURL := protocol + domain
+	if port != "" {
+		publicURL += ":" + port
+	}
+
+	// 保存到配置（保存规范化后的 URL）
+	cfg, _ := a.LoadTunnelConfig()
+	cfg.TunnelMode = "external"
+	cfg.ExternalUrl = publicURL
+	cfg.Enabled = true
+	a.SaveTunnelConfig(cfg)
+
+	// 更新状态
+	a.tunnelMu.Lock()
+	a.tunnelPublicURL = publicURL
+	a.tunnelRunning = true
+	a.tunnelLastErr = ""
+	a.tunnelMu.Unlock()
+
+	return fmt.Sprintf("外部穿透已设置: %s", publicURL), nil
+}
+
+// ClearExternalTunnel 清除外部穿透地址
+func (a *App) ClearExternalTunnel() (string, error) {
+	cfg, _ := a.LoadTunnelConfig()
+	cfg.ExternalUrl = ""
+	cfg.Enabled = false
+	a.SaveTunnelConfig(cfg)
+
+	a.tunnelMu.Lock()
+	// 只清除外部穿透的状态（不影响 FRP 穿透）
+	if cfg.TunnelMode == "external" {
+		a.tunnelPublicURL = ""
+		a.tunnelRunning = false
+	}
+	a.tunnelMu.Unlock()
+
+	return "外部穿透已清除", nil
+}
+
 // StartTunnel 启动穿透
 func (a *App) StartTunnel() (string, error) {
 	cfg, err := a.LoadTunnelConfig()
 	if err != nil {
 		return "", err
+	}
+
+	// 如果是外部穿透模式，使用 SetExternalTunnel
+	if cfg.TunnelMode == "external" {
+		return a.SetExternalTunnel(cfg.ExternalUrl)
 	}
 
 	// 校验必填字段

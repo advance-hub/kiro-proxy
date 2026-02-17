@@ -53,6 +53,8 @@ declare global {
           GetTunnelStatus(): Promise<any>;
           StartTunnel(): Promise<string>;
           StopTunnel(): Promise<string>;
+          SetExternalTunnel(url: string): Promise<string>;
+          ClearExternalTunnel(): Promise<string>;
         };
       };
     };

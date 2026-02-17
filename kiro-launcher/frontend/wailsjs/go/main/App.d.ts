@@ -16,6 +16,8 @@ export function CheckActivation():Promise<main.ActivationData>;
 
 export function ClearCredentials():Promise<string>;
 
+export function ClearExternalTunnel():Promise<string>;
+
 export function Deactivate():Promise<string>;
 
 export function DeleteAccount(arg1:string):Promise<string>;
@@ -71,6 +73,8 @@ export function SaveConfig(arg1:string,arg2:number,arg3:string,arg4:string):Prom
 export function SaveCredentialsRaw(arg1:string):Promise<string>;
 
 export function SaveTunnelConfig(arg1:main.TunnelConfig):Promise<string>;
+
+export function SetExternalTunnel(arg1:string):Promise<string>;
 
 export function StartProxy():Promise<string>;
 
