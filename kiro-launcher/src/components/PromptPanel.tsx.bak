@@ -1,0 +1,172 @@
+import React, { useState, useEffect } from "react";
+import { Button, Card, Typography, Toast, Tag, TextArea, Input, Space, Divider, Popconfirm } from "@douyinfe/semi-ui";
+import { IconCopy, IconTick, IconPlus, IconDelete, IconSend } from "@douyinfe/semi-icons";
+
+const { Text } = Typography;
+
+const wails = () => {
+  if (!window.go?.main?.App) throw new Error("Wails runtime 尚未就绪");
+  return window.go.main.App;
+};
+
+interface PromptTemplate {
+  id: string;
+  name: string;
+  content: string;
+  builtin: boolean;
+}
+
+export default function PromptPanel() {
+  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
+  const [selected, setSelected] = useState<PromptTemplate | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const load = async () => {
+    try {
+      const list = await wails().GetPromptTemplates() as PromptTemplate[];
+      setTemplates(list || []);
+      if (!selected && list.length > 0) setSelected(list[0]);
+    } catch (e) { Toast.error({ content: String(e) }); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleCopy = () => {
+    if (!selected) return;
+    navigator.clipboard.writeText(selected.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    Toast.success({ content: "已复制到剪贴板" });
+  };
+
+  const handleApplyClaudeCode = async () => {
+    if (!selected) return;
+    try {
+      await wails().ApplyPromptToClaudeCode(selected.content);
+      Toast.success({ content: "已写入 ~/CLAUDE.md" });
+    } catch (e) { Toast.error({ content: String(e) }); }
+  };
+
+  const handleApplyCursor = async () => {
+    if (!selected) return;
+    try {
+      await wails().ApplyPromptToCursorRules(selected.content, "");
+      Toast.success({ content: "已写入 ~/.cursorrules" });
+    } catch (e) { Toast.error({ content: String(e) }); }
+  };
+
+  const handleNew = () => {
+    setEditing(true);
+    setEditName("");
+    setEditContent("");
+    setSelected(null);
+  };
+
+  const handleSave = async () => {
+    if (!editName.trim()) { Toast.warning({ content: "请输入模板名称" }); return; }
+    const tmpl: PromptTemplate = {
+      id: selected?.id || `custom-${Date.now()}`,
+      name: editName,
+      content: editContent,
+      builtin: false,
+    };
+    try {
+      await wails().SavePromptTemplate(tmpl);
+      Toast.success({ content: "模板已保存" });
+      setEditing(false);
+      await load();
+      setSelected(tmpl);
+    } catch (e) { Toast.error({ content: String(e) }); }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await wails().DeletePromptTemplate(id);
+      Toast.success({ content: "模板已删除" });
+      if (selected?.id === id) setSelected(null);
+      await load();
+    } catch (e) { Toast.error({ content: String(e) }); }
+  };
+
+  return (
+    <div style={{ padding: "20px 24px 32px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div>
+          <Text strong style={{ fontSize: 18, display: "block" }}>提示词模板</Text>
+          <Text type="tertiary" size="small">内置和自定义 AI 提示词，一键应用到 Claude Code / Cursor</Text>
+        </div>
+        <Button icon={<IconPlus />} theme="light" onClick={handleNew}>新建模板</Button>
+      </div>
+
+      {/* 模板列表 */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        {templates.map((t) => (
+          <Tag
+            key={t.id}
+            size="large"
+            color={selected?.id === t.id ? "blue" : "white"}
+            type={selected?.id === t.id ? "solid" : "ghost"}
+            style={{ cursor: "pointer", borderRadius: 6 }}
+            onClick={() => { setSelected(t); setEditing(false); }}
+          >
+            {t.name}
+            {t.builtin && <Tag size="small" color="green" type="light" style={{ marginLeft: 4, fontSize: 10 }}>内置</Tag>}
+          </Tag>
+        ))}
+      </div>
+
+      {/* 编辑模式 */}
+      {editing && (
+        <Card style={{ marginBottom: 12, borderRadius: 10 }} bodyStyle={{ padding: "16px 20px" }}>
+          <Text strong style={{ display: "block", marginBottom: 8 }}>新建模板</Text>
+          <Input placeholder="模板名称" value={editName} onChange={setEditName} style={{ marginBottom: 8 }} />
+          <TextArea placeholder="提示词内容" value={editContent} onChange={setEditContent} rows={12} style={{ marginBottom: 12, fontFamily: "'SF Mono', 'Fira Code', monospace", fontSize: 12 }} />
+          <Space>
+            <Button type="primary" theme="solid" onClick={handleSave}>保存</Button>
+            <Button theme="borderless" onClick={() => setEditing(false)}>取消</Button>
+          </Space>
+        </Card>
+      )}
+
+      {/* 预览 */}
+      {selected && !editing && (
+        <Card style={{ borderRadius: 10 }} bodyStyle={{ padding: "16px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <Text strong>{selected.name}</Text>
+            <Space>
+              {!selected.builtin && (
+                <>
+                  <Button size="small" theme="borderless" onClick={() => { setEditing(true); setEditName(selected.name); setEditContent(selected.content); }}>编辑</Button>
+                  <Popconfirm title="确认删除此模板？" onConfirm={() => handleDelete(selected.id)}>
+                    <Button size="small" theme="borderless" type="danger" icon={<IconDelete />} />
+                  </Popconfirm>
+                </>
+              )}
+              <Button size="small" theme="borderless" icon={copied ? <IconTick style={{ color: "#00b365" }} /> : <IconCopy />} onClick={handleCopy}>复制</Button>
+            </Space>
+          </div>
+
+          <pre style={{
+            margin: 0, padding: "12px 14px", borderRadius: 8, fontSize: 12, lineHeight: 1.7,
+            background: "var(--semi-color-fill-0)", border: "1px solid var(--semi-color-border)",
+            fontFamily: "'SF Mono', 'Fira Code', monospace", color: "var(--semi-color-text-0)",
+            whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 360, overflow: "auto",
+          }}>
+            {selected.content}
+          </pre>
+
+          <Divider style={{ margin: "14px 0" }} />
+
+          <Text type="secondary" size="small" style={{ display: "block", marginBottom: 10 }}>一键应用到客户端：</Text>
+          <Space>
+            <Button size="small" theme="light" icon={<IconSend />} onClick={handleApplyClaudeCode}>写入 Claude Code (~/CLAUDE.md)</Button>
+            <Button size="small" theme="light" icon={<IconSend />} onClick={handleApplyCursor}>写入 Cursor (~/.cursorrules)</Button>
+          </Space>
+        </Card>
+      )}
+    </div>
+  );
+}

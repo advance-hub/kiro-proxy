@@ -10,6 +10,10 @@ export function AddAccountByIdCWithProvider(arg1:string,arg2:string,arg3:string,
 
 export function AddAccountBySocial(arg1:string,arg2:string):Promise<main.Account>;
 
+export function ApplyPromptToClaudeCode(arg1:string):Promise<void>;
+
+export function ApplyPromptToCursorRules(arg1:string,arg2:string):Promise<void>;
+
 export function BatchDeleteAccounts(arg1:Array<string>):Promise<number>;
 
 export function CheckActivation():Promise<main.ActivationData>;
@@ -22,11 +26,23 @@ export function Deactivate():Promise<string>;
 
 export function DeleteAccount(arg1:string):Promise<string>;
 
+export function DeletePromptTemplate(arg1:string):Promise<void>;
+
 export function EnsureFactoryApiKey():Promise<string>;
 
 export function ExportAccounts(arg1:Array<string>):Promise<string>;
 
 export function ExportAccountsToFile(arg1:Array<string>):Promise<string>;
+
+export function ExportCredsToShellRC(arg1:string):Promise<void>;
+
+export function GenerateCredsKey():Promise<string>;
+
+export function GenerateCredsKeyFromKeychain():Promise<string>;
+
+export function GenerateRelayKey(arg1:string):Promise<string>;
+
+export function GenerateRelayKeyFromKeychain(arg1:string):Promise<string>;
 
 export function GetAccounts():Promise<Array<main.Account>>;
 
@@ -36,7 +52,15 @@ export function GetCredentialsInfo():Promise<main.CredentialsInfo>;
 
 export function GetDataDirPath():Promise<string>;
 
+export function GetLogFilePath():Promise<string>;
+
+export function GetPromptTemplates():Promise<Array<main.PromptTemplate>>;
+
 export function GetProxyLogs():Promise<Array<string>>;
+
+export function GetRecentLogs(arg1:number):Promise<string>;
+
+export function GetServerSyncConfig():Promise<main.ServerSyncConfig>;
 
 export function GetStatus():Promise<main.StatusInfo>;
 
@@ -72,6 +96,10 @@ export function SaveConfig(arg1:string,arg2:number,arg3:string,arg4:string):Prom
 
 export function SaveCredentialsRaw(arg1:string):Promise<string>;
 
+export function SavePromptTemplate(arg1:main.PromptTemplate):Promise<void>;
+
+export function SaveServerSyncConfig(arg1:string,arg2:string):Promise<void>;
+
 export function SaveTunnelConfig(arg1:main.TunnelConfig):Promise<string>;
 
 export function SetExternalTunnel(arg1:string):Promise<string>;
@@ -88,9 +116,13 @@ export function SwitchAccount(arg1:string):Promise<string>;
 
 export function SyncAccount(arg1:string):Promise<main.Account>;
 
+export function TestServerConnection(arg1:string):Promise<string>;
+
 export function UpdateAccount(arg1:string,arg2:any,arg3:any,arg4:any,arg5:any,arg6:any):Promise<main.Account>;
 
 export function UpdateAccountLabel(arg1:string,arg2:string):Promise<main.Account>;
+
+export function UploadCredentialsToServer(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function UseKeychainSource(arg1:string):Promise<string>;
 

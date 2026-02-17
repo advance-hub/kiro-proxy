@@ -18,6 +18,14 @@ export function AddAccountBySocial(arg1, arg2) {
   return window['go']['main']['App']['AddAccountBySocial'](arg1, arg2);
 }
 
+export function ApplyPromptToClaudeCode(arg1) {
+  return window['go']['main']['App']['ApplyPromptToClaudeCode'](arg1);
+}
+
+export function ApplyPromptToCursorRules(arg1, arg2) {
+  return window['go']['main']['App']['ApplyPromptToCursorRules'](arg1, arg2);
+}
+
 export function BatchDeleteAccounts(arg1) {
   return window['go']['main']['App']['BatchDeleteAccounts'](arg1);
 }
@@ -42,6 +50,10 @@ export function DeleteAccount(arg1) {
   return window['go']['main']['App']['DeleteAccount'](arg1);
 }
 
+export function DeletePromptTemplate(arg1) {
+  return window['go']['main']['App']['DeletePromptTemplate'](arg1);
+}
+
 export function EnsureFactoryApiKey() {
   return window['go']['main']['App']['EnsureFactoryApiKey']();
 }
@@ -52,6 +64,26 @@ export function ExportAccounts(arg1) {
 
 export function ExportAccountsToFile(arg1) {
   return window['go']['main']['App']['ExportAccountsToFile'](arg1);
+}
+
+export function ExportCredsToShellRC(arg1) {
+  return window['go']['main']['App']['ExportCredsToShellRC'](arg1);
+}
+
+export function GenerateCredsKey() {
+  return window['go']['main']['App']['GenerateCredsKey']();
+}
+
+export function GenerateCredsKeyFromKeychain() {
+  return window['go']['main']['App']['GenerateCredsKeyFromKeychain']();
+}
+
+export function GenerateRelayKey(arg1) {
+  return window['go']['main']['App']['GenerateRelayKey'](arg1);
+}
+
+export function GenerateRelayKeyFromKeychain(arg1) {
+  return window['go']['main']['App']['GenerateRelayKeyFromKeychain'](arg1);
 }
 
 export function GetAccounts() {
@@ -70,8 +102,24 @@ export function GetDataDirPath() {
   return window['go']['main']['App']['GetDataDirPath']();
 }
 
+export function GetLogFilePath() {
+  return window['go']['main']['App']['GetLogFilePath']();
+}
+
+export function GetPromptTemplates() {
+  return window['go']['main']['App']['GetPromptTemplates']();
+}
+
 export function GetProxyLogs() {
   return window['go']['main']['App']['GetProxyLogs']();
+}
+
+export function GetRecentLogs(arg1) {
+  return window['go']['main']['App']['GetRecentLogs'](arg1);
+}
+
+export function GetServerSyncConfig() {
+  return window['go']['main']['App']['GetServerSyncConfig']();
 }
 
 export function GetStatus() {
@@ -142,6 +190,14 @@ export function SaveCredentialsRaw(arg1) {
   return window['go']['main']['App']['SaveCredentialsRaw'](arg1);
 }
 
+export function SavePromptTemplate(arg1) {
+  return window['go']['main']['App']['SavePromptTemplate'](arg1);
+}
+
+export function SaveServerSyncConfig(arg1, arg2) {
+  return window['go']['main']['App']['SaveServerSyncConfig'](arg1, arg2);
+}
+
 export function SaveTunnelConfig(arg1) {
   return window['go']['main']['App']['SaveTunnelConfig'](arg1);
 }
@@ -174,12 +230,20 @@ export function SyncAccount(arg1) {
   return window['go']['main']['App']['SyncAccount'](arg1);
 }
 
+export function TestServerConnection(arg1) {
+  return window['go']['main']['App']['TestServerConnection'](arg1);
+}
+
 export function UpdateAccount(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['UpdateAccount'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function UpdateAccountLabel(arg1, arg2) {
   return window['go']['main']['App']['UpdateAccountLabel'](arg1, arg2);
+}
+
+export function UploadCredentialsToServer(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UploadCredentialsToServer'](arg1, arg2, arg3);
 }
 
 export function UseKeychainSource(arg1) {

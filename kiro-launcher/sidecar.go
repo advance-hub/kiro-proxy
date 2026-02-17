@@ -16,9 +16,9 @@ var sidecarFS embed.FS
 // sidecarName returns the expected binary name for the current platform.
 func sidecarName() string {
 	if runtime.GOOS == "windows" {
-		return "kiro-rs.exe"
+		return "kiro-go.exe"
 	}
-	return "kiro-rs"
+	return "kiro-go"
 }
 
 // extractSidecar extracts the embedded kiro-rs binary to a cache directory
@@ -28,7 +28,7 @@ func extractSidecar() (string, error) {
 	name := sidecarName()
 	data, err := fs.ReadFile(sidecarFS, "sidecar/"+name)
 	if err != nil {
-		return "", fmt.Errorf("embedded kiro-rs not found: %v", err)
+		return "", fmt.Errorf("embedded kiro-go not found: %v", err)
 	}
 
 	// Cache dir: <dataDir>/bin/
@@ -59,7 +59,7 @@ func extractSidecar() (string, error) {
 
 	// Write new binary
 	if err := os.WriteFile(outPath, data, 0755); err != nil {
-		return "", fmt.Errorf("释放 kiro-rs 失败: %v", err)
+		return "", fmt.Errorf("释放 kiro-go 失败: %v", err)
 	}
 
 	return outPath, nil

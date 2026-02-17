@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { Button, Typography, Toast } from "@douyinfe/semi-ui";
-import { IconPlay, IconKey, IconInfoCircle, IconSetting, IconLink, IconMoon, IconSun, IconHelpCircle } from "@douyinfe/semi-icons";
+import { IconPlay, IconKey, IconSetting, IconLink, IconMoon, IconSun, IconHelpCircle, IconEdit } from "@douyinfe/semi-icons";
 
 import ProxyPanel from "./components/ProxyPanel";
 import AccountManager from "./components/AccountManager/index";
-import LogsPanel from "./components/LogsPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import OpenCodePanel from "./components/OpenCodePanel";
 import ClaudeCodePanel from "./components/ClaudeCodePanel";
 import TunnelPanel from "./components/TunnelPanel";
+// import PromptPanel from "./components/PromptPanel";
 import AboutPanel from "./components/AboutPanel";
+import LogsPanel from "./components/LogsPanel";
 
 const { Text } = Typography;
 
@@ -82,64 +83,90 @@ function ActivationGate({ onActivated }: { onActivated: () => void }) {
 function MainApp() {
   const { dark, toggle } = useTheme();
   const [activeTab, setActiveTab] = useState("proxy");
+  const [clientSubTab, setClientSubTab] = useState("droid");
 
-  const menuItems = [
-    { key: "proxy", label: "代理", icon: <IconPlay /> },
-    { key: "tunnel", label: "穿透", icon: <IconLink /> },
-    { key: "accounts", label: "账号", icon: <IconKey /> },
-    { key: "logs", label: "日志", icon: <IconInfoCircle /> },
-    { key: "settings", label: "Droid", icon: <IconSetting /> },
-    { key: "opencode", label: "OpenCode", icon: <IconLink /> },
-    { key: "claudecode", label: "Claude Code", icon: <IconLink /> },
+  const mainMenu = [
+    { key: "proxy", label: "代理服务", icon: <IconPlay /> },
+    { key: "accounts", label: "账号管理", icon: <IconKey /> },
+    { key: "clients", label: "客户端配置", icon: <IconSetting /> },
+    // { key: "prompts", label: "提示词模板", icon: <IconEdit /> },
+    { key: "tunnel", label: "内网穿透", icon: <IconLink /> },
+    { key: "logs", label: "日志中心", icon: <IconEdit /> },
     { key: "about", label: "关于", icon: <IconHelpCircle /> },
   ];
 
+  const clientTabs = [
+    { key: "droid", label: "Droid" },
+    { key: "opencode", label: "OpenCode" },
+    { key: "claudecode", label: "Claude Code" },
+  ];
+
+  const borderColor = dark ? "#333" : "#e8e8e8";
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: dark ? "#1a1a1a" : "#f5f5f5", transition: "background 0.3s" }}>
-      {/* Sidebar */}
-      <div style={{ width: 220, background: dark ? "#242424" : "#fff", borderRight: `1px solid ${dark ? "#333" : "#e8e8e8"}`, display: "flex", flexDirection: "column", transition: "background 0.3s, border-color 0.3s" }}>
-        {/* Logo */}
-        <div style={{ padding: "20px 16px", borderBottom: `1px solid ${dark ? "#333" : "#e8e8e8"}`, display: "flex", alignItems: "center", gap: 10 }}>
+      {/* 侧边栏 */}
+      <div style={{ width: 200, background: dark ? "#242424" : "#fff", borderRight: `1px solid ${borderColor}`, display: "flex", flexDirection: "column", transition: "background 0.3s, border-color 0.3s" }}>
+        <div style={{ padding: "20px 16px", borderBottom: `1px solid ${borderColor}`, display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #3370ff, #5b8def)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 16 }}>K</div>
           <Text strong style={{ fontSize: 15 }}>Kiro Launcher</Text>
         </div>
 
-        {/* Menu Items */}
         <div style={{ flex: 1, padding: "12px 8px" }}>
-          {menuItems.map((item) => (
+          {mainMenu.map((item) => (
             <div
               key={item.key}
               onClick={() => setActiveTab(item.key)}
               style={{
-                padding: "10px 12px", marginBottom: 4, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
-                background: activeTab === item.key ? (dark ? "#3370ff20" : "#3370ff15") : "transparent",
+                padding: "10px 12px", marginBottom: 2, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                background: activeTab === item.key ? (dark ? "#3370ff20" : "#3370ff10") : "transparent",
                 color: activeTab === item.key ? "#3370ff" : (dark ? "#aaa" : "#666"),
-                fontWeight: activeTab === item.key ? 600 : 400, transition: "all 0.2s",
+                fontWeight: activeTab === item.key ? 600 : 400, transition: "all 0.15s",
               }}
             >
               {item.icon}
-              <span style={{ fontSize: 14 }}>{item.label}</span>
+              <span style={{ fontSize: 13 }}>{item.label}</span>
             </div>
           ))}
         </div>
 
-        {/* Theme Toggle */}
-        <div style={{ padding: "12px 16px", borderTop: `1px solid ${dark ? "#333" : "#e8e8e8"}` }}>
-          <Button theme="borderless" icon={dark ? <IconSun style={{ color: "#f5a623" }} /> : <IconMoon style={{ color: "#666" }} />} onClick={toggle} block style={{ borderRadius: 8 }}>
+        <div style={{ padding: "12px 16px", borderTop: `1px solid ${borderColor}` }}>
+          <Button theme="borderless" icon={dark ? <IconSun style={{ color: "#f5a623" }} /> : <IconMoon style={{ color: "#666" }} />} onClick={toggle} block style={{ borderRadius: 8, fontSize: 13 }}>
             {dark ? "浅色模式" : "深色模式"}
           </Button>
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* 主内容区 */}
       <div style={{ flex: 1, overflow: "auto" }}>
         {activeTab === "proxy" && <ProxyPanel />}
-        {activeTab === "tunnel" && <TunnelPanel />}
         {activeTab === "accounts" && <AccountManager />}
+        {activeTab === "clients" && (
+          <div>
+            <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${borderColor}`, background: dark ? "#242424" : "#fff", padding: "0 24px" }}>
+              {clientTabs.map((tab) => (
+                <div
+                  key={tab.key}
+                  onClick={() => setClientSubTab(tab.key)}
+                  style={{
+                    padding: "12px 20px", cursor: "pointer", fontSize: 13, fontWeight: clientSubTab === tab.key ? 600 : 400,
+                    color: clientSubTab === tab.key ? "#3370ff" : (dark ? "#aaa" : "#666"),
+                    borderBottom: clientSubTab === tab.key ? "2px solid #3370ff" : "2px solid transparent",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {tab.label}
+                </div>
+              ))}
+            </div>
+            {clientSubTab === "droid" && <SettingsPanel />}
+            {clientSubTab === "opencode" && <OpenCodePanel />}
+            {clientSubTab === "claudecode" && <ClaudeCodePanel />}
+          </div>
+        )}
+        {/* {activeTab === "prompts" && <PromptPanel />} */}
+        {activeTab === "tunnel" && <TunnelPanel />}
         {activeTab === "logs" && <LogsPanel />}
-        {activeTab === "settings" && <SettingsPanel />}
-        {activeTab === "opencode" && <OpenCodePanel />}
-        {activeTab === "claudecode" && <ClaudeCodePanel />}
         {activeTab === "about" && <AboutPanel />}
       </div>
     </div>

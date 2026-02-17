@@ -1,13 +1,11 @@
 import React, { useState, useRef } from "react";
-import { Button, Typography, Toast, Select } from "@douyinfe/semi-ui";
+import { Button, Typography, Toast, Select, Card } from "@douyinfe/semi-ui";
 import { IconClose, IconUpload, IconFile, IconTick, IconClear } from "@douyinfe/semi-icons";
+import * as App from "../../../frontend/wailsjs/go/main/App";
 
 const { Text } = Typography;
 
-const wails = () => {
-  if (!window.go?.main?.App) throw new Error("Wails runtime 尚未就绪");
-  return window.go.main.App;
-};
+const wails = () => App;
 
 interface Props {
   onClose: () => void;
@@ -89,7 +87,9 @@ export default function ImportAccountModal({ onClose, onSuccess }: Props) {
         if (item._type === "social") {
           account = await wails().AddAccountBySocial(item.refreshToken, item.provider || "Google");
         } else {
-          account = await wails().AddAccountByIdC(item.refreshToken, item.clientId!, item.clientSecret!, item.region || "us-east-1");
+          // IdC 账号：支持 BuilderId 和 Enterprise
+          const provider = item.provider || "BuilderId";
+          account = await wails().AddAccountByIdCWithProvider(item.refreshToken, item.clientId!, item.clientSecret!, item.region || "us-east-1", provider);
         }
         success.push(account.email);
       } catch (e) {
@@ -168,6 +168,10 @@ export default function ImportAccountModal({ onClose, onSuccess }: Props) {
                   const tpl = JSON.stringify([{ refreshToken: "", clientId: "", clientSecret: "", region: "us-east-1", provider: "BuilderId" }], null, 2);
                   setJsonText(tpl);
                 }}>IdC 模板</Button>
+                <Button onClick={() => {
+                  const tpl = JSON.stringify([{ refreshToken: "", clientId: "", clientSecret: "", region: "us-east-1", provider: "Enterprise" }], null, 2);
+                  setJsonText(tpl);
+                }}>Enterprise 模板</Button>
               </div>
 
               <div style={{ marginBottom: 16 }}>

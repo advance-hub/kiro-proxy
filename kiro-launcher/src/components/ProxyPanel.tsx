@@ -123,11 +123,16 @@ export default function ProxyPanel() {
 
       <Card bodyStyle={{ padding: "14px 20px" }} style={{ marginBottom: 12, borderRadius: 10 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}><Space><IconLink style={{ color: "var(--semi-color-text-2)" }} /><Text strong>API 端点</Text></Space></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[{ label: "Anthropic 原生格式", path: "/v1/messages" }, { label: "OpenAI 兼容格式 ⭐", path: "/v1/chat/completions" }, { label: "模型列表", path: "/v1/models" }].map(ep => (
-            <div key={ep.path} style={{ padding: "8px 10px", borderRadius: 4, background: "var(--semi-color-fill-0)", border: "1px solid var(--semi-color-border)" }}>
-              <Text size="small" type="secondary" style={{ display: "block", marginBottom: 4 }}>{ep.label}</Text>
-              <Text size="small" copyable style={{ fontFamily: "monospace", fontSize: 11 }}>{`http://${host}:${port}${ep.path}`}</Text>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {[
+            { method: "GET", path: "/v1/models", desc: "模型列表" },
+            { method: "POST", path: "/v1/messages", desc: "Anthropic 原生格式" },
+            { method: "POST", path: "/v1/chat/completions", desc: "OpenAI 兼容格式 ⭐" },
+          ].map((ep) => (
+            <div key={ep.path} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 6, background: "var(--semi-color-fill-0)", border: "1px solid var(--semi-color-border)" }}>
+              <Tag size="small" color={ep.method === "GET" ? "green" : "blue"} type="light" style={{ fontFamily: "monospace", fontSize: 11, minWidth: 42, textAlign: "center" }}>{ep.method}</Tag>
+              <Text size="small" copyable style={{ fontFamily: "monospace", fontSize: 11, flex: 1 }}>{`http://${host}:${port}${ep.path}`}</Text>
+              <Text type="tertiary" size="small">{ep.desc}</Text>
             </div>
           ))}
         </div>
@@ -159,19 +164,6 @@ export default function ProxyPanel() {
       <Card bodyStyle={{ padding: "14px 20px" }} style={{ marginBottom: 12, borderRadius: 10 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}><Space><IconLink style={{ color: "var(--semi-color-text-2)" }} /><Text strong>客户端配置</Text></Space><Tooltip content={copied ? "已复制" : "复制到剪贴板"}><Button size="small" theme="borderless" type="tertiary" icon={copied ? <IconTick style={{ color: "#00b365" }} /> : <IconCopy />} onClick={handleCopy} /></Tooltip></div>
         <pre style={{ margin: 0, padding: "10px 12px", borderRadius: 6, background: "var(--semi-color-fill-0)", border: "1px solid var(--semi-color-border)", fontSize: 12, fontFamily: "'SF Mono', 'Fira Code', monospace", color: "var(--semi-color-text-0)", lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{`ANTHROPIC_BASE_URL=http://${host}:${port}\nANTHROPIC_API_KEY=${apiKey}`}</pre>
-      </Card>
-
-      <Card bodyStyle={{ padding: "14px 20px" }} style={{ marginBottom: 12, borderRadius: 10 }}>
-        <Space style={{ marginBottom: 10 }}><IconInfoCircle style={{ color: "var(--semi-color-text-2)" }} /><Text strong>API 端点</Text></Space>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {[{ method: "GET", path: "/v1/models", desc: "模型列表" }, { method: "POST", path: "/v1/messages", desc: "对话" }, { method: "POST", path: "/v1/messages/count_tokens", desc: "Token 估算" }, { method: "POST", path: "/cc/v1/messages", desc: "对话 (Claude Code)" }, { method: "POST", path: "/cc/v1/messages/count_tokens", desc: "Token 估算 (CC)" }].map((ep) => (
-            <div key={ep.path} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 4, background: "var(--semi-color-fill-0)" }}>
-              <Tag size="small" color={ep.method === "GET" ? "green" : "blue"} type="light" style={{ fontFamily: "monospace", fontSize: 11, minWidth: 42, textAlign: "center" }}>{ep.method}</Tag>
-              <Text style={{ fontFamily: "monospace", fontSize: 12, flex: 1 }}>{ep.path}</Text>
-              <Text type="tertiary" size="small">{ep.desc}</Text>
-            </div>
-          ))}
-        </div>
       </Card>
 
       <Card bodyStyle={{ padding: 0 }} style={{ borderRadius: 10 }}>

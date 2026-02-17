@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,19 +27,31 @@ type Account struct {
 	Label        string `json:"label"`
 	Status       string `json:"status"` // 正常, 已封禁, Token已失效
 	AddedAt      string `json:"addedAt"`
-	Provider     string `json:"provider"` // Google, Github, BuilderId
+	Provider     string `json:"provider"` // Google, Github, BuilderId, Enterprise
 	AccessToken  string `json:"accessToken,omitempty"`
 	RefreshToken string `json:"refreshToken"`
 	ExpiresAt    string `json:"expiresAt,omitempty"`
 	// IdC 专用
+	AuthMethod   string `json:"authMethod,omitempty"` // IdC, social
 	ClientID     string `json:"clientId,omitempty"`
 	ClientSecret string `json:"clientSecret,omitempty"`
 	ClientIDHash string `json:"clientIdHash,omitempty"`
 	Region       string `json:"region,omitempty"`
 	// Social 专用
 	ProfileArn string `json:"profileArn,omitempty"`
+	// 用户信息
+	UserID string `json:"userId,omitempty"`
 	// 配额数据
 	UsageData map[string]interface{} `json:"usageData,omitempty"`
+	// 机器标识（用于 relay）
+	MachineID string `json:"machineId,omitempty"`
+}
+
+// computeClientIDHash 计算 clientId 的 SHA-256 哈希
+// 与参考项目 kiro-account-manager 的 compute_client_id_hash 保持一致
+func computeClientIDHash(clientID string) string {
+	h := sha256.Sum256([]byte(clientID))
+	return hex.EncodeToString(h[:])
 }
 
 type AccountStore struct {
@@ -361,6 +376,12 @@ func (a *App) AddAccountByIdCWithProvider(refreshToken, clientID, clientSecret, 
 	// 根据 provider 设置标签
 	label := fmt.Sprintf("Kiro %s 账号", provider)
 
+	// 计算 clientIdHash（如果缺失）
+	clientIdHash := ""
+	if clientID != "" {
+		clientIdHash = computeClientIDHash(clientID)
+	}
+
 	account := Account{
 		ID:           uuid.New().String(),
 		Email:        email,
@@ -368,11 +389,13 @@ func (a *App) AddAccountByIdCWithProvider(refreshToken, clientID, clientSecret, 
 		Status:       status,
 		AddedAt:      time.Now().Format("2006/01/02 15:04:05"),
 		Provider:     provider,
+		AuthMethod:   "IdC",
 		AccessToken:  derefStr(refreshed.AccessToken),
 		RefreshToken: refreshed.RefreshToken,
 		ExpiresAt:    refreshed.ExpiresAt,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
+		ClientIDHash: clientIdHash,
 		Region:       region,
 		UsageData:    usageData,
 	}
@@ -393,7 +416,7 @@ func (a *App) SyncAccount(id string) (Account, error) {
 	isIdC := account.Provider == "BuilderId" || account.Provider == "Enterprise" || account.ClientID != ""
 
 	// 调试日志
-	fmt.Printf("[DEBUG] SyncAccount: Provider=%s, ClientID=%s, isIdC=%v\n",
+	logInfo("SyncAccount: Provider=%s, ClientID=%s, isIdC=%v",
 		account.Provider, account.ClientID, isIdC)
 
 	if isIdC {
@@ -425,6 +448,19 @@ func (a *App) SyncAccount(id string) (Account, error) {
 	}
 	account.ExpiresAt = refreshed.ExpiresAt
 
+	// 写入 credentials.json（确保 autoUploadToServer 能读到最新凭证）
+	saveCredentialsFileSmart(refreshed)
+
+	// 确保 AuthMethod 和 ClientIDHash 正确
+	if isIdC {
+		account.AuthMethod = "IdC"
+		if account.ClientIDHash == "" && account.ClientID != "" {
+			account.ClientIDHash = computeClientIDHash(account.ClientID)
+		}
+	} else {
+		account.AuthMethod = "social"
+	}
+
 	// 获取配额
 	usage, usageErr := getUsageLimits(account.AccessToken, isIdC)
 	if usageErr != nil {
@@ -439,12 +475,19 @@ func (a *App) SyncAccount(id string) (Account, error) {
 		if usage.UserInfo != nil && usage.UserInfo.Email != "" {
 			account.Email = usage.UserInfo.Email
 		}
+		if usage.UserInfo != nil && usage.UserInfo.UserID != "" {
+			account.UserID = usage.UserInfo.UserID
+		}
 		// 只在成功获取配额时才更新 usageData
 		usageBytes, _ := json.Marshal(usage)
 		json.Unmarshal(usageBytes, &account.UsageData)
 	}
 
 	getAccountStore().Update(*account)
+
+	// 同步刷新后的凭证到服务器映射
+	go autoUploadToServer()
+
 	return *account, nil
 }
 
@@ -457,6 +500,15 @@ func (a *App) SwitchAccount(id string) (string, error) {
 
 	if account.RefreshToken == "" {
 		return "", fmt.Errorf("账号缺少 RefreshToken")
+	}
+
+	// 判断是否为 IdC 账号（BuilderId、Enterprise 或有 clientId 的账号）
+	isIdC := account.Provider == "BuilderId" || account.Provider == "Enterprise" || account.ClientID != ""
+
+	// 确保 clientIdHash 存在（如果缺失则计算）
+	if isIdC && account.ClientIDHash == "" && account.ClientID != "" {
+		account.ClientIDHash = computeClientIDHash(account.ClientID)
+		getAccountStore().Update(*account)
 	}
 
 	// 写入 ~/.aws/sso/cache/kiro-auth-token.json
@@ -474,10 +526,14 @@ func (a *App) SwitchAccount(id string) (string, error) {
 		"provider":     account.Provider,
 	}
 
-	if account.Provider == "BuilderId" {
+	if isIdC {
 		tokenData["authMethod"] = "IdC"
 		tokenData["clientIdHash"] = account.ClientIDHash
-		tokenData["region"] = account.Region
+		region := account.Region
+		if region == "" {
+			region = "us-east-1"
+		}
+		tokenData["region"] = region
 
 		// 写入 client registration
 		if account.ClientID != "" && account.ClientSecret != "" && account.ClientIDHash != "" {
@@ -510,7 +566,6 @@ func (a *App) SwitchAccount(id string) (string, error) {
 	}
 
 	// 同时写入 credentials.json，让 kiro.rs 代理能通过热加载感知账号切换
-	isIdC := account.Provider == "BuilderId" || account.Provider == "Enterprise" || account.ClientID != ""
 	authMethod := "social"
 	if isIdC {
 		authMethod = "idc"
@@ -534,10 +589,115 @@ func (a *App) SwitchAccount(id string) (string, error) {
 	}
 	if err := saveCredentialsFileSmart(creds); err != nil {
 		// 非致命错误，不阻止切换
-		fmt.Fprintf(os.Stderr, "写入 credentials.json 失败: %v\n", err)
+		logWarn("写入 credentials.json 失败: %v", err)
 	}
 
+	// 通知 kiro-go 代理重新加载凭据（清除缓存的 token）
+	go notifyProxyReload()
+
+	// 自动上传凭证到服务器（如果已配置服务器同步）
+	go autoUploadToServer()
+
 	return fmt.Sprintf("已切换到 %s", account.Email), nil
+}
+
+// autoUploadToServer 切换账号后自动上传凭证到服务器
+func autoUploadToServer() {
+	dir, err := getDataDir()
+	if err != nil {
+		return
+	}
+	// 读取服务器同步配置
+	syncData, err := os.ReadFile(filepath.Join(dir, "server_sync.json"))
+	if err != nil {
+		return // 未配置服务器同步，跳过
+	}
+	var syncCfg ServerSyncConfig
+	if json.Unmarshal(syncData, &syncCfg) != nil || syncCfg.ServerURL == "" || syncCfg.ActivationCode == "" {
+		return
+	}
+
+	logInfo("自动同步凭证到服务器: %s (激活码: %s)", syncCfg.ServerURL, syncCfg.ActivationCode)
+
+	// 读取本地凭证
+	credsData, err := os.ReadFile(filepath.Join(dir, "credentials.json"))
+	if err != nil {
+		logError("自动上传：读取凭证失败: %v", err)
+		return
+	}
+	var rawCreds map[string]interface{}
+	if json.Unmarshal(credsData, &rawCreds) != nil {
+		return
+	}
+
+	// 构造上传请求（包含所有凭证字段，确保服务器能独立刷新 Token）
+	credentials := map[string]interface{}{
+		"accessToken":  rawCreds["accessToken"],
+		"refreshToken": rawCreds["refreshToken"],
+		"expiresAt":    rawCreds["expiresAt"],
+	}
+	if v, ok := rawCreds["authMethod"].(string); ok && v != "" {
+		credentials["authMethod"] = v
+	}
+	if v, ok := rawCreds["clientId"].(string); ok && v != "" {
+		credentials["clientId"] = v
+	}
+	if v, ok := rawCreds["clientSecret"].(string); ok && v != "" {
+		credentials["clientSecret"] = v
+	}
+	if v, ok := rawCreds["region"].(string); ok && v != "" {
+		credentials["region"] = v
+	}
+
+	payload, _ := json.Marshal(map[string]interface{}{
+		"activation_code": syncCfg.ActivationCode,
+		"credentials":     credentials,
+	})
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	url := syncCfg.ServerURL + "/api/admin/user-credentials"
+	resp, err := client.Post(url, "application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		logError("自动上传凭证到服务器失败: %v", err)
+		return
+	}
+	resp.Body.Close()
+	logInfo("✅ 已自动上传凭证到服务器 %s (状态: %d)", syncCfg.ServerURL, resp.StatusCode)
+}
+
+// notifyProxyReload 通知本地代理重新加载凭据
+func notifyProxyReload() {
+	// 读取代理配置获取端口
+	dir, err := getDataDir()
+	if err != nil {
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return
+	}
+	var cfg ProxyConfig
+	if json.Unmarshal(data, &cfg) != nil {
+		return
+	}
+	port := cfg.Port
+	if port == 0 {
+		port = 13000
+	}
+	host := cfg.Host
+	if host == "" || host == "0.0.0.0" {
+		host = "127.0.0.1"
+	}
+
+	url := fmt.Sprintf("http://%s:%d/api/admin/reload-credentials", host, port)
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Post(url, "application/json", nil)
+	if err != nil {
+		logWarn("通知代理重新加载凭据失败: %v", err)
+		return
+	}
+	resp.Body.Close()
+	logInfo("已通知代理重新加载凭据")
 }
 
 // ImportLocalAccount 导入本地 Kiro IDE 账号
@@ -588,7 +748,16 @@ func (a *App) ImportLocalAccount() (Account, error) {
 		if provider == "" {
 			provider = "BuilderId"
 		}
-		return a.AddAccountByIdCWithProvider(refreshToken, clientID, clientSecret, region, provider)
+		account, err := a.AddAccountByIdCWithProvider(refreshToken, clientID, clientSecret, region, provider)
+		if err != nil {
+			return account, err
+		}
+		// 确保 clientIdHash 被保存
+		if account.ClientIDHash == "" && clientIdHash != "" {
+			account.ClientIDHash = clientIdHash
+			getAccountStore().Update(account)
+		}
+		return account, nil
 	}
 
 	// Social 账号
@@ -658,6 +827,7 @@ func (a *App) ExportAccounts(ids []string) (string, error) {
 		AuthMethod   string `json:"authMethod,omitempty"`
 		ClientID     string `json:"clientId,omitempty"`
 		ClientSecret string `json:"clientSecret,omitempty"`
+		ClientIDHash string `json:"clientIdHash,omitempty"`
 		Region       string `json:"region,omitempty"`
 	}
 
@@ -677,6 +847,7 @@ func (a *App) ExportAccounts(ids []string) (string, error) {
 			AuthMethod:   authMethod,
 			ClientID:     acc.ClientID,
 			ClientSecret: acc.ClientSecret,
+			ClientIDHash: acc.ClientIDHash,
 			Region:       acc.Region,
 		}
 	}

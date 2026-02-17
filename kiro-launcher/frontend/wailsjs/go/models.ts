@@ -10,12 +10,15 @@ export namespace main {
 	    accessToken?: string;
 	    refreshToken: string;
 	    expiresAt?: string;
+	    authMethod?: string;
 	    clientId?: string;
 	    clientSecret?: string;
 	    clientIdHash?: string;
 	    region?: string;
 	    profileArn?: string;
+	    userId?: string;
 	    usageData?: Record<string, any>;
+	    machineId?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Account(source);
@@ -32,12 +35,15 @@ export namespace main {
 	        this.accessToken = source["accessToken"];
 	        this.refreshToken = source["refreshToken"];
 	        this.expiresAt = source["expiresAt"];
+	        this.authMethod = source["authMethod"];
 	        this.clientId = source["clientId"];
 	        this.clientSecret = source["clientSecret"];
 	        this.clientIdHash = source["clientIdHash"];
 	        this.region = source["region"];
 	        this.profileArn = source["profileArn"];
+	        this.userId = source["userId"];
 	        this.usageData = source["usageData"];
+	        this.machineId = source["machineId"];
 	    }
 	}
 	export class ActivationData {
@@ -106,6 +112,24 @@ export namespace main {
 	        this.expired = source["expired"];
 	    }
 	}
+	export class PromptTemplate {
+	    id: string;
+	    name: string;
+	    content: string;
+	    builtin: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PromptTemplate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.content = source["content"];
+	        this.builtin = source["builtin"];
+	    }
+	}
 	export class ProxyConfig {
 	    host: string;
 	    port: number;
@@ -126,6 +150,20 @@ export namespace main {
 	        this.region = source["region"];
 	        this.tlsBackend = source["tlsBackend"];
 	        this.adminApiKey = source["adminApiKey"];
+	    }
+	}
+	export class ServerSyncConfig {
+	    serverUrl: string;
+	    activationCode: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ServerSyncConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.serverUrl = source["serverUrl"];
+	        this.activationCode = source["activationCode"];
 	    }
 	}
 	export class StatusInfo {

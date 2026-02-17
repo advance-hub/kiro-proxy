@@ -1,13 +1,11 @@
 import React, { useState } from "react";
 import { Button, Card, Input, Typography, Toast, Select, Space } from "@douyinfe/semi-ui";
 import { IconClose, IconKey, IconDownload } from "@douyinfe/semi-icons";
+import * as App from "../../../frontend/wailsjs/go/main/App";
 
 const { Text } = Typography;
 
-const wails = () => {
-  if (!window.go?.main?.App) throw new Error("Wails runtime 尚未就绪");
-  return window.go.main.App;
-};
+const wails = () => App;
 
 interface Props {
   onClose: () => void;
@@ -17,7 +15,7 @@ interface Props {
 export default function AddAccountModal({ onClose, onSuccess }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [addType, setAddType] = useState<"social" | "idc">("social");
+  const [addType, setAddType] = useState<"social" | "idc" | "enterprise">("social");
   const [form, setForm] = useState({ refreshToken: "", clientId: "", clientSecret: "", region: "us-east-1", provider: "Google" });
 
   const handleSaveLocal = async () => {
@@ -35,7 +33,7 @@ export default function AddAccountModal({ onClose, onSuccess }: Props) {
   const handleAddManual = async () => {
     if (!form.refreshToken) { setError("请输入 Refresh Token"); return; }
     if (!form.refreshToken.startsWith("aor")) { setError("Token 格式错误，应以 aor 开头"); return; }
-    if (addType === "idc" && (!form.clientId || !form.clientSecret)) { setError("请填写 Client ID 和 Client Secret"); return; }
+    if ((addType === "idc" || addType === "enterprise") && (!form.clientId || !form.clientSecret)) { setError("请填写 Client ID 和 Client Secret"); return; }
 
     setLoading(true);
     setError("");
@@ -43,7 +41,8 @@ export default function AddAccountModal({ onClose, onSuccess }: Props) {
       if (addType === "social") {
         await wails().AddAccountBySocial(form.refreshToken, form.provider);
       } else {
-        await wails().AddAccountByIdC(form.refreshToken, form.clientId, form.clientSecret, form.region);
+        const provider = addType === "enterprise" ? "Enterprise" : "BuilderId";
+        await wails().AddAccountByIdCWithProvider(form.refreshToken, form.clientId, form.clientSecret, form.region, provider);
       }
       Toast.success({ content: "账号添加成功" });
       onSuccess();
@@ -86,6 +85,7 @@ export default function AddAccountModal({ onClose, onSuccess }: Props) {
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <Button size="small" theme={addType === "social" ? "solid" : "light"} onClick={() => setAddType("social")}>Social (Google/Github)</Button>
             <Button size="small" theme={addType === "idc" ? "solid" : "light"} onClick={() => setAddType("idc")}>BuilderId (IdC)</Button>
+            <Button size="small" theme={addType === "enterprise" ? "solid" : "light"} onClick={() => setAddType("enterprise")}>Enterprise</Button>
           </div>
 
           {/* Form */}
@@ -120,6 +120,29 @@ export default function AddAccountModal({ onClose, onSuccess }: Props) {
                   <Select.Option value="us-east-1">us-east-1 (N. Virginia)</Select.Option>
                   <Select.Option value="us-west-2">us-west-2 (Oregon)</Select.Option>
                   <Select.Option value="eu-west-1">eu-west-1 (Ireland)</Select.Option>
+                </Select>
+              </div>
+            </>
+          )}
+
+          {addType === "enterprise" && (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <Text size="small" style={{ display: "block", marginBottom: 4 }}>Client ID</Text>
+                <Input size="small" value={form.clientId} onChange={(v) => setForm({ ...form, clientId: v })} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <Text size="small" style={{ display: "block", marginBottom: 4 }}>Client Secret</Text>
+                <Input size="small" type="password" value={form.clientSecret} onChange={(v) => setForm({ ...form, clientSecret: v })} />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <Text size="small" style={{ display: "block", marginBottom: 4 }}>Region</Text>
+                <Select size="small" value={form.region} onChange={(v) => setForm({ ...form, region: v as string })} style={{ width: "100%" }}>
+                  <Select.Option value="us-east-1">us-east-1 (N. Virginia)</Select.Option>
+                  <Select.Option value="us-west-2">us-west-2 (Oregon)</Select.Option>
+                  <Select.Option value="eu-west-1">eu-west-1 (Ireland)</Select.Option>
+                  <Select.Option value="eu-central-1">eu-central-1 (Frankfurt)</Select.Option>
+                  <Select.Option value="ap-southeast-1">ap-southeast-1 (Singapore)</Select.Option>
                 </Select>
               </div>
             </>

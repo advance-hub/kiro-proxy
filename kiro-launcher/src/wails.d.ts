@@ -47,6 +47,13 @@ declare global {
           ExportAccountsToFile(ids: string[]): Promise<string>;
           BatchDeleteAccounts(ids: string[]): Promise<number>;
           SaveAccountsToFile(filePath: string, content: string): Promise<void>;
+          // Log Management
+          GetRecentLogs(lines: number): Promise<string>;
+          GetLogFilePath(): Promise<string>;
+          // Server Sync
+          UploadCredentialsToServer(serverURL: string, activationCode: string, userName: string): Promise<string>;
+          GetServerSyncConfig(): Promise<any>;
+          SaveServerSyncConfig(serverURL: string, activationCode: string): Promise<string>;
           // Tunnel Management
           LoadTunnelConfig(): Promise<any>;
           SaveTunnelConfig(config: any): Promise<string>;

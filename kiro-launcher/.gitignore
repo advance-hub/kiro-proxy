@@ -1,0 +1,20 @@
+# Build outputs
+kiro-launcher
+kiro-launcher-test
+kiro-launcher.exe
+build/bin/
+dist/
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
