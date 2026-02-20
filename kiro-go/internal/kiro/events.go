@@ -3,9 +3,9 @@ package kiro
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"kiro-go/internal/kiro/parser"
+	"kiro-go/internal/logger"
 )
 
 // Event Kiro API 返回的事件
@@ -95,7 +95,7 @@ func parseEventFrame(frame *parser.Frame) (*Event, error) {
 		return &Event{Type: "metering"}, nil
 
 	default:
-		log.Printf("未知事件类型: %s", eventType)
+		logger.Debugf(logger.CatStream, "未知事件类型: %s", eventType)
 		return &Event{Type: "unknown"}, nil
 	}
 }

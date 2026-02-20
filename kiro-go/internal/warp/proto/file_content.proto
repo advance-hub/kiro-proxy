@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+import "options.proto";
+
+option go_package = "kiro-go/internal/warp/pb";
+
+message FileContentLineRange {
+    uint32 start = 1;
+    uint32 end = 2;
+}
+
+message FileContent {
+    string file_path = 1;
+    string content = 2;
+    FileContentLineRange line_range = 3;
+}
+
+message BinaryFileContent {
+    string file_path = 1;
+    bytes data = 2;
+}
+
+message AnyFileContent {
+    oneof content {
+        BinaryFileContent binary_content = 1;
+        FileContent text_content = 2;
+    }
+}

@@ -42,6 +42,14 @@ export function ClearExternalTunnel() {
   return window['go']['main']['App']['ClearExternalTunnel']();
 }
 
+export function ClearLogFile() {
+  return window['go']['main']['App']['ClearLogFile']();
+}
+
+export function ClearProxyLogs() {
+  return window['go']['main']['App']['ClearProxyLogs']();
+}
+
 export function Deactivate() {
   return window['go']['main']['App']['Deactivate']();
 }
@@ -90,6 +98,10 @@ export function GetAccounts() {
   return window['go']['main']['App']['GetAccounts']();
 }
 
+export function GetBackend() {
+  return window['go']['main']['App']['GetBackend']();
+}
+
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
@@ -130,12 +142,20 @@ export function GetTunnelStatus() {
   return window['go']['main']['App']['GetTunnelStatus']();
 }
 
+export function GetWarpCredentialFromKeychain() {
+  return window['go']['main']['App']['GetWarpCredentialFromKeychain']();
+}
+
 export function ImportCredentials(arg1) {
   return window['go']['main']['App']['ImportCredentials'](arg1);
 }
 
 export function ImportLocalAccount() {
   return window['go']['main']['App']['ImportLocalAccount']();
+}
+
+export function ImportWarpCredentialFromKeychain() {
+  return window['go']['main']['App']['ImportWarpCredentialFromKeychain']();
 }
 
 export function ListKeychainSources() {
@@ -182,6 +202,10 @@ export function SaveAccountsToFile(arg1, arg2) {
   return window['go']['main']['App']['SaveAccountsToFile'](arg1, arg2);
 }
 
+export function SaveClaudeCodeConfig(arg1, arg2) {
+  return window['go']['main']['App']['SaveClaudeCodeConfig'](arg1, arg2);
+}
+
 export function SaveConfig(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveConfig'](arg1, arg2, arg3, arg4);
 }
@@ -200,6 +224,10 @@ export function SaveServerSyncConfig(arg1, arg2) {
 
 export function SaveTunnelConfig(arg1) {
   return window['go']['main']['App']['SaveTunnelConfig'](arg1);
+}
+
+export function SetBackend(arg1) {
+  return window['go']['main']['App']['SetBackend'](arg1);
 }
 
 export function SetExternalTunnel(arg1) {

@@ -54,7 +54,7 @@ func (a *App) Activate(code string) (string, error) {
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	reqBody, _ := json.Marshal(map[string]string{"code": code, "machineId": mid})
-	url := ActivationServer + "/api/activate"
+	url := getActivationServerURL() + "/api/activate"
 
 	resp, err := client.Post(url, "application/json", strings.NewReader(string(reqBody)))
 	if err != nil {

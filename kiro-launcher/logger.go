@@ -120,6 +120,17 @@ func (a *App) GetRecentLogs(lines int) (string, error) {
 	return result, nil
 }
 
+// ClearLogFile 清空系统日志文件（供前端调用）
+func (a *App) ClearLogFile() error {
+	logFileMu.Lock()
+	defer logFileMu.Unlock()
+	if logFile != nil {
+		logFile.Truncate(0)
+		logFile.Seek(0, 0)
+	}
+	return nil
+}
+
 func splitLines(s string) []string {
 	var lines []string
 	start := 0

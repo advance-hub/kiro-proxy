@@ -34,10 +34,12 @@ func NormalizeModelName(name string) string {
 	lower = strings.TrimSuffix(lower, "-thinking")
 
 	// claude-haiku-4-5 / claude-haiku-4-5-20251001 / claude-haiku-4-5-latest
+	// 注意：必须在 reNoMinor 之前检查，因为 4-5 格式优先级更高
 	if m := reStandard.FindStringSubmatch(lower); m != nil {
 		return m[1] + "." + m[2]
 	}
-	// claude-sonnet-4 / claude-sonnet-4-20250514
+	// claude-sonnet-4 / claude-sonnet-4-20250514（只匹配没有 minor 版本的）
+	// 但 claude-opus-4-6 应该被 reStandard 匹配，不应该到这里
 	if m := reNoMinor.FindStringSubmatch(lower); m != nil {
 		return m[1]
 	}

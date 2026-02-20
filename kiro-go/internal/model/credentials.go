@@ -43,6 +43,7 @@ type UserCredentialEntry struct {
 	ActivationCode string          `json:"activation_code"`
 	UserName       string          `json:"user_name,omitempty"`
 	Credentials    KiroCredentials `json:"credentials"`
+	ExpiresDate    string          `json:"expires_date,omitempty"` // 有效期截止日期
 	CreatedAt      string          `json:"created_at"`
 	UpdatedAt      string          `json:"updated_at"`
 }

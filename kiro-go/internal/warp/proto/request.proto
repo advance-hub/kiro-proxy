@@ -1,0 +1,296 @@
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "input_context.proto";
+import "attachment.proto";
+import "options.proto";
+import "suggestions.proto";
+import "task.proto";
+
+option go_package = "kiro-go/internal/warp/pb";
+
+enum AutonomyLevel {
+    SUPERVISED = 0;
+    UNSUPERVISED = 1;
+}
+
+enum IsolationLevel {
+    NONE = 0;
+    SANDBOX = 1;
+}
+
+message Request {
+    message TaskContext {
+        repeated Task tasks = 1;
+        string active_task_id = 2;
+    }
+
+    message Input {
+        message UserQuery {
+            message ReferencedAttachmentsEntry {
+                string key = 1;
+                Attachment value = 2;
+            }
+
+            string query = 1;
+            repeated ReferencedAttachmentsEntry referenced_attachments = 2;
+            UserQueryMode mode = 3;
+            AgentType intended_agent = 4;
+        }
+
+        message CLIAgentUserQuery {
+            UserQuery user_query = 1;
+            RunningShellCommand running_command = 2;
+            string run_shell_command_tool_call_id = 3;
+        }
+
+        message UserInputs {
+            message UserInput {
+                oneof input {
+                    UserQuery user_query = 1;
+                    ToolCallResult tool_call_result = 2;
+                    CLIAgentUserQuery cli_agent_user_query = 3;
+                }
+            }
+
+            repeated UserInput inputs = 1;
+        }
+
+        message ToolCallResult {
+            string tool_call_id = 1;
+            oneof result {
+                RunShellCommandResult run_shell_command = 2;
+                ReadFilesResult read_files = 3;
+                SearchCodebaseResult search_codebase = 4;
+                ApplyFileDiffsResult apply_file_diffs = 5;
+                SuggestPlanResult suggest_plan = 6;
+                SuggestCreatePlanResult suggest_create_plan = 7;
+                GrepResult grep = 8;
+                FileGlobResult file_glob = 9;
+                ReadMCPResourceResult read_mcp_resource = 11;
+                CallMCPToolResult call_mcp_tool = 12;
+                WriteToLongRunningShellCommandResult write_to_long_running_shell_command = 13;
+                SuggestNewConversationResult suggest_new_conversation = 14;
+                FileGlobV2Result file_glob_v2 = 15;
+                SuggestPromptResult suggest_prompt = 16;
+                OpenCodeReviewResult open_code_review = 17;
+                InitProjectResult init_project = 18;
+                ReadDocumentsResult read_documents = 19;
+                EditDocumentsResult edit_documents = 20;
+                CreateDocumentsResult create_documents = 21;
+                ReadShellCommandOutputResult read_shell_command_output = 22;
+                UseComputerResult use_computer = 23;
+                InsertReviewCommentsResult insert_review_comments = 24;
+                RequestComputerUseResult request_computer_use = 25;
+                ReadSkillResult read_skill = 26;
+            }
+        }
+
+        message QueryWithCannedResponse {
+            message Install {
+            }
+
+            message Code {
+            }
+
+            message Deploy {
+            }
+
+            message SomethingElse {
+            }
+
+            message CustomOnboardingRequest {
+            }
+
+            message AgenticOnboardingKickoff {
+            }
+
+            string query = 1;
+            oneof type {
+                Install install = 2;
+                Code code = 3;
+                Deploy deploy = 4;
+                SomethingElse something_else = 5;
+                CustomOnboardingRequest custom_onboarding_request = 6;
+                AgenticOnboardingKickoff agentic_onboarding_kickoff = 7;
+            }
+        }
+
+        message AutoCodeDiffQuery {
+            string query = 1;
+        }
+
+        message ResumeConversation {
+        }
+
+        message InitProjectRules {
+        }
+
+        message CreateNewProject {
+            string query = 1;
+        }
+
+        message CloneRepository {
+            string url = 1;
+        }
+
+        message CreateEnvironment {
+            repeated string repo_paths = 1;
+        }
+
+        message TriggerSuggestPrompt {
+            repeated Attachment attachments = 1;
+            oneof trigger {
+                google.protobuf.Empty files_changed = 2;
+                google.protobuf.Empty command_run = 3;
+            }
+        }
+
+        message CodeReview {
+            message InitialReviewComments {
+                repeated ReviewComment review_comments = 1;
+                DiffSet diff_set = 2;
+            }
+
+            oneof operation {
+                InitialReviewComments initial_review_comments = 1;
+            }
+        }
+
+        message FetchReviewComments {
+            string repo_path = 1;
+        }
+
+        message SummarizeConversation {
+            string prompt = 1;
+        }
+
+        InputContext context = 1;
+        oneof type {
+            UserInputs user_inputs = 6;
+            QueryWithCannedResponse query_with_canned_response = 4;
+            AutoCodeDiffQuery auto_code_diff_query = 5;
+            ResumeConversation resume_conversation = 7;
+            InitProjectRules init_project_rules = 8;
+            TriggerSuggestPrompt trigger_suggest_prompt = 9;
+            CreateNewProject create_new_project = 10;
+            CloneRepository clone_repository = 11;
+            CodeReview code_review = 12;
+            SummarizeConversation summarize_conversation = 13;
+            CreateEnvironment create_environment = 14;
+            FetchReviewComments fetch_review_comments = 15;
+            UserQuery user_query = 2;
+            ToolCallResult tool_call_result = 3;
+        }
+    }
+
+    message Metadata {
+        message LoggingEntry {
+            string key = 1;
+            google.protobuf.Value value = 2;
+        }
+
+        string conversation_id = 1;
+        repeated LoggingEntry logging = 2;
+        string ambient_agent_task_id = 3;
+        string forked_from_conversation_id = 4;
+    }
+
+    message Settings {
+        message ModelConfig {
+            string base = 1;
+            string planning = 2;
+            string coding = 3;
+            string cli_agent = 4;
+        }
+
+        message ApiKeys {
+            message AWSCredentials {
+                string access_key = 1;
+                string secret_key = 2;
+                string session_token = 3;
+                string region = 4;
+            }
+
+            string anthropic = 1;
+            string openai = 2;
+            string google = 3;
+            string open_router = 4;
+            bool allow_use_of_warp_credits = 5;
+            AWSCredentials aws_credentials = 6;
+        }
+
+        ModelConfig model_config = 1;
+        bool rules_enabled = 2;
+        bool web_context_retrieval_enabled = 3;
+        bool supports_parallel_tool_calls = 4;
+        bool use_anthropic_text_editor_tools = 5;
+        bool planning_enabled = 6;
+        bool warp_drive_context_enabled = 7;
+        bool supports_create_files = 8;
+        repeated ToolType supported_tools = 9;
+        bool supports_long_running_commands = 10;
+        bool should_preserve_file_content_in_history = 11;
+        bool supports_todos_ui = 12;
+        bool supports_linked_code_blocks = 13;
+        bool supports_started_child_task_message = 14;
+        bool supports_suggest_prompt = 15;
+        bool supports_read_image_files = 16;
+        bool supports_reasoning_message = 17;
+        ApiKeys api_keys = 18;
+        AutonomyLevel autonomy_level = 19;
+        IsolationLevel isolation_level = 20;
+        bool web_search_enabled = 21;
+        repeated ToolType supported_cli_agent_tools = 22;
+        bool supports_v4a_file_diffs = 23;
+        bool supports_summarization_via_message_replacement = 24;
+    }
+
+    message MCPContext {
+        message MCPResource {
+            string uri = 1;
+            string name = 2;
+            string description = 3;
+            string mime_type = 4;
+        }
+
+        message MCPTool {
+            string name = 1;
+            string description = 2;
+            google.protobuf.Struct input_schema = 3;
+        }
+
+        message MCPServer {
+            string name = 1;
+            string description = 2;
+            string id = 5;
+            repeated MCPResource resources = 3;
+            repeated MCPTool tools = 4;
+        }
+
+        repeated MCPResource resources = 1;
+        repeated MCPTool tools = 2;
+        repeated MCPServer servers = 3;
+    }
+
+    TaskContext task_context = 1;
+    Input input = 2;
+    Settings settings = 3;
+    Metadata metadata = 4;
+    Suggestions existing_suggestions = 5;
+    MCPContext mcp_context = 6;
+    SkillsContext skills_context = 7;
+}
+
+message SkillsContext {
+    repeated Skill available_skills = 1;
+}
+
+message Skill {
+    string path = 1;
+    string name = 2;
+    string description = 3;
+}

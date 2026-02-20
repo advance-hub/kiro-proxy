@@ -6,12 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"kiro-go/internal/logger"
 	"kiro-go/internal/model"
 )
 
@@ -19,6 +19,7 @@ type contextKey string
 
 const CredsContextKey contextKey = "kiro_credentials"
 const ActCodeContextKey contextKey = "activation_code"
+const RequestIDContextKey contextKey = "request_id"
 
 // 激活码验证缓存
 type actCodeCache struct {
@@ -67,17 +68,6 @@ func ExtractAPIKey(r *http.Request) string {
 	return ""
 }
 
-// maskKey 遮蔽 API Key 中间部分用于日志
-func maskKey(key string) string {
-	if key == "" {
-		return "<empty>"
-	}
-	if len(key) <= 8 {
-		return "***"
-	}
-	return key[:4] + "***" + key[len(key)-4:]
-}
-
 // GetCredsFromContext 从 context 中获取凭证
 func GetCredsFromContext(r *http.Request) *model.KiroCredentials {
 	if creds, ok := r.Context().Value(CredsContextKey).(*model.KiroCredentials); ok {
@@ -90,6 +80,14 @@ func GetCredsFromContext(r *http.Request) *model.KiroCredentials {
 func GetActCodeFromContext(r *http.Request) string {
 	if code, ok := r.Context().Value(ActCodeContextKey).(string); ok {
 		return code
+	}
+	return ""
+}
+
+// GetRequestIDFromContext 从 context 中获取 request ID
+func GetRequestIDFromContext(r *http.Request) string {
+	if rid, ok := r.Context().Value(RequestIDContextKey).(string); ok {
+		return rid
 	}
 	return ""
 }
@@ -134,12 +132,9 @@ func DecodeCredsKey(key string) (*model.KiroCredentials, error) {
 	return &creds, nil
 }
 
-// validateActivationCode 调用 app.js 激活码验证服务
-// code: 原始激活码（XXXX-XXXX-XXXX-XXXX 格式，不含 act- 前缀）
-// machineId: 客户端机器码（从 X-Machine-Id header 获取）
 func validateActivationCode(serverURL, code, machineId string) (bool, string) {
 	if serverURL == "" {
-		return true, "" // 未配置激活码服务器，跳过验证
+		return true, ""
 	}
 
 	payload, _ := json.Marshal(map[string]string{
@@ -147,11 +142,19 @@ func validateActivationCode(serverURL, code, machineId string) (bool, string) {
 		"machineId": machineId,
 	})
 
+	// 使用 /api/code/validate 仅检查激活码有效性（不要求 machineId 和穿透权限）
+	// 旧版使用 /api/tunnel/check 会因为 machineId 不匹配或无穿透权限而拒绝合法用户
+	validateURL := serverURL + "/api/code/validate"
+
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(serverURL+"/api/tunnel/check", "application/json", bytes.NewReader(payload))
+	resp, err := client.Post(validateURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
-		log.Printf("激活码验证服务不可用: %v，放行请求", err)
-		return true, "" // 验证服务不可用时放行（降级策略）
+		// 验证服务不可用时，尝试回退到本地验证（如果 ActivationServerURL 指向自身）
+		logger.WarnFields(logger.CatAuth, "激活码验证服务不可用，放行请求", logger.F{
+			"error": err.Error(),
+			"url":   validateURL,
+		})
+		return true, ""
 	}
 	defer resp.Body.Close()
 
@@ -160,8 +163,20 @@ func validateActivationCode(serverURL, code, machineId string) (bool, string) {
 		Message string `json:"message"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("激活码验证响应解析失败: %v，放行请求", err)
+		logger.WarnFields(logger.CatAuth, "激活码验证响应解析失败，放行请求", logger.F{
+			"error":  err.Error(),
+			"url":    validateURL,
+			"status": resp.StatusCode,
+		})
 		return true, ""
+	}
+
+	if !result.Success {
+		logger.WarnFields(logger.CatAuth, "激活码验证失败", logger.F{
+			"code":    logger.MaskKey(code),
+			"message": result.Message,
+			"url":     validateURL,
+		})
 	}
 
 	return result.Success, result.Message
@@ -169,17 +184,26 @@ func validateActivationCode(serverURL, code, machineId string) (bool, string) {
 
 // AuthMiddleware 认证中间件
 type AuthMiddleware struct {
-	Config       *model.Config
-	GetUserCreds func(code string) *model.KiroCredentials
+	Config                  *model.Config
+	GetUserCreds            func(code string) *model.KiroCredentials
+	GetUserCredsWithExpiry  func(code string) (*model.KiroCredentials, bool, string)
+	GetUserCredsAutoRefresh func(code string) (*model.KiroCredentials, error)
+	GetCodeExpiresDate      func(code string) (expiresDate string, expired bool) // 从 codes.json 获取过期日期
 }
 
 // Wrap 包装 handler
 func (am *AuthMiddleware) Wrap(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 1. X-Kiro-Credentials header（本地模式直传凭证）
+		rid := GenerateRequestID()
+		ctx := context.WithValue(r.Context(), RequestIDContextKey, rid)
+		r = r.WithContext(ctx)
+		log := logger.NewContext(logger.CatAuth, rid, "")
+
+		// 1. X-Kiro-Credentials header
 		if h := r.Header.Get("x-kiro-credentials"); h != "" {
 			var creds model.KiroCredentials
 			if err := json.Unmarshal([]byte(h), &creds); err != nil {
+				log.Warn("X-Kiro-Credentials 解析失败", logger.F{"error": err.Error()})
 				WriteError(w, http.StatusUnauthorized, "authentication_error", "Invalid X-Kiro-Credentials")
 				return
 			}
@@ -190,65 +214,126 @@ func (am *AuthMiddleware) Wrap(handler http.HandlerFunc) http.HandlerFunc {
 
 		// 2. 提取 API Key
 		key := ExtractAPIKey(r)
-		log.Printf("[AUTH] 请求路径: %s | API Key: %s | User-Agent: %s", r.URL.Path, maskKey(key), r.Header.Get("User-Agent"))
+		log.Info("收到请求", logger.F{
+			"path":       r.URL.Path,
+			"method":     r.Method,
+			"api_key":    logger.MaskKey(key),
+			"user_agent": r.Header.Get("User-Agent"),
+		})
 		if key == "" {
-			log.Printf("[AUTH] ❌ 缺少 API Key")
+			log.Warn("缺少 API Key")
 			WriteError(w, http.StatusUnauthorized, "authentication_error", "Missing API key")
 			return
 		}
 
-		// 3. act- 激活码（与 app.js 卡密系统集成）
-		// 格式: act-XXXX-XXXX-XXXX-XXXX
-		// 流程: 提取卡密 → 调 app.js 验证（有效性+穿透权限+过期检查）→ 查 user_credentials.json 获取 Kiro 凭证
+		// 3. act- 激活码
 		if strings.HasPrefix(key, "act-") {
 			rawCode := strings.TrimPrefix(key, "act-")
 			upperCode := strings.ToUpper(rawCode)
-			log.Printf("[AUTH] 🔑 激活码模式: %s", maskKey(key))
+			log = logger.NewContext(logger.CatAuth, rid, logger.MaskKey(upperCode))
+			log.Info("激活码认证", logger.F{"code": logger.MaskKey(upperCode)})
 
-			// 3a. 调 app.js 验证激活码（如果配置了 activationServerUrl）
+			// 3a. 调 app.js 验证激活码
 			machineId := r.Header.Get("X-Machine-Id")
 			if am.Config.ActivationServerURL != "" {
-				// 先查缓存
 				cacheKey := upperCode + ":" + machineId
 				if valid, msg, cached := actCache.get(cacheKey); cached {
 					if !valid {
-						log.Printf("[AUTH] ❌ 激活码验证失败 (缓存): %s - %s", maskKey(upperCode), msg)
+						log.Warn("激活码验证失败(缓存)", logger.F{"reason": msg})
 						WriteError(w, http.StatusForbidden, "authentication_error", msg)
 						return
 					}
-					log.Printf("[AUTH] ✅ app.js 验证通过 (缓存)")
+					log.Debug("激活码验证通过(缓存)")
 				} else {
-					// 缓存未命中，调用验证
-					log.Printf("[AUTH] 调用 app.js 验证: %s (machineId: %s)", am.Config.ActivationServerURL, maskKey(machineId))
+					log.Debug("调用 app.js 验证", logger.F{
+						"server":     am.Config.ActivationServerURL,
+						"machine_id": logger.MaskKey(machineId),
+					})
 					ok, msg := validateActivationCode(am.Config.ActivationServerURL, upperCode, machineId)
-					// 缓存结果（成功缓存 5 分钟，失败缓存 1 分钟）
 					ttl := 1 * time.Minute
 					if ok {
 						ttl = 5 * time.Minute
 					}
 					actCache.set(cacheKey, ok, msg, ttl)
 					if !ok {
-						log.Printf("[AUTH] ❌ 激活码验证失败: %s - %s", maskKey(upperCode), msg)
+						log.Warn("激活码验证失败", logger.F{"reason": msg})
 						WriteError(w, http.StatusForbidden, "authentication_error", msg)
 						return
 					}
-					log.Printf("[AUTH] ✅ app.js 验证通过")
+					log.Info("激活码验证通过")
 				}
 			}
 
-			// 3b. 查 user_credentials.json 获取 Kiro 凭证
-			creds := am.GetUserCreds(key)
+			// 3b. 先检查激活码本身的过期日期（从 codes.json）
+			if am.GetCodeExpiresDate != nil {
+				codeExpiresDate, codeExpired := am.GetCodeExpiresDate(upperCode)
+				if codeExpired {
+					logger.LogAuthResult(rid, logger.MaskKey(upperCode), "code_expired", logger.F{
+						"code_expires_date": codeExpiresDate,
+					})
+					WriteError(w, http.StatusForbidden, "authentication_error",
+						fmt.Sprintf("您的激活码已过期（过期日期：%s），请联系管理员续期", codeExpiresDate))
+					return
+				}
+			}
+
+			// 3c. 获取用户凭证（优先使用 auto-refresh）
+			var creds *model.KiroCredentials
+			var matchedKey string // 记录匹配到的 key 格式
+
+			if am.GetUserCredsAutoRefresh != nil {
+				// 使用 auto-refresh 方法，token 过期时自动后台刷新
+				for _, code := range []string{upperCode, key, rawCode} {
+					c, err := am.GetUserCredsAutoRefresh(code)
+					if c != nil {
+						creds = c
+						matchedKey = code
+						if err != nil {
+							log.Warn("token 自动刷新失败，使用现有 token", logger.F{
+								"error":       err.Error(),
+								"matched_key": logger.MaskKey(matchedKey),
+							})
+						}
+						break
+					}
+				}
+			} else if am.GetUserCreds != nil {
+				creds = am.GetUserCreds(upperCode)
+				if creds != nil {
+					matchedKey = upperCode
+				}
+				if creds == nil {
+					creds = am.GetUserCreds(key)
+					if creds != nil {
+						matchedKey = key
+					}
+				}
+				if creds == nil {
+					creds = am.GetUserCreds(rawCode)
+					if creds != nil {
+						matchedKey = rawCode
+					}
+				}
+			}
+
 			if creds == nil {
-				// 激活码在 app.js 验证通过，但 kiro-go 没有对应凭证
-				// 回退到主凭证池（让所有已验证的激活码用户都能用）
-				log.Printf("[AUTH] ⚠️  激活码 %s 无独立凭证，使用主凭证池", maskKey(key))
-				ctx := context.WithValue(r.Context(), ActCodeContextKey, key)
+				logger.LogAuthResult(rid, logger.MaskKey(upperCode), "no_creds_fallback_pool", logger.F{
+					"tried_keys": fmt.Sprintf("[%s, %s, %s]",
+						logger.MaskKey(upperCode), logger.MaskKey(key), logger.MaskKey(rawCode)),
+				})
+				ctx := context.WithValue(r.Context(), ActCodeContextKey, upperCode)
 				handler(w, r.WithContext(ctx))
 				return
 			}
-			log.Printf("[AUTH] ✅ 使用激活码独立凭证")
+
+			logger.LogAuthResult(rid, logger.MaskKey(upperCode), "success", logger.F{
+				"matched_key":   logger.MaskKey(matchedKey),
+				"token_expires": creds.ExpiresAt,
+				"has_token":     creds.AccessToken != "",
+				"disabled":      creds.Disabled,
+			})
 			ctx := context.WithValue(r.Context(), CredsContextKey, creds)
-			ctx = context.WithValue(ctx, ActCodeContextKey, key)
+			ctx = context.WithValue(ctx, ActCodeContextKey, upperCode)
 			handler(w, r.WithContext(ctx))
 			return
 		}
@@ -257,6 +342,7 @@ func (am *AuthMiddleware) Wrap(handler http.HandlerFunc) http.HandlerFunc {
 		if strings.HasPrefix(key, "creds-") {
 			creds, err := DecodeCredsKey(key)
 			if err != nil {
+				log.Warn("creds key 解码失败", logger.F{"error": err.Error()})
 				WriteError(w, http.StatusUnauthorized, "authentication_error", "Invalid creds key: "+err.Error())
 				return
 			}
@@ -265,8 +351,9 @@ func (am *AuthMiddleware) Wrap(handler http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// 5. 普通 API Key（使用主凭证池）
+		// 5. 普通 API Key
 		if key != am.Config.APIKey {
+			log.Warn("API Key 无效")
 			WriteError(w, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 			return
 		}

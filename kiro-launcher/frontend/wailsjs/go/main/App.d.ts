@@ -22,6 +22,10 @@ export function ClearCredentials():Promise<string>;
 
 export function ClearExternalTunnel():Promise<string>;
 
+export function ClearLogFile():Promise<void>;
+
+export function ClearProxyLogs():Promise<void>;
+
 export function Deactivate():Promise<string>;
 
 export function DeleteAccount(arg1:string):Promise<string>;
@@ -46,6 +50,8 @@ export function GenerateRelayKeyFromKeychain(arg1:string):Promise<string>;
 
 export function GetAccounts():Promise<Array<main.Account>>;
 
+export function GetBackend():Promise<string>;
+
 export function GetConfig():Promise<main.ProxyConfig>;
 
 export function GetCredentialsInfo():Promise<main.CredentialsInfo>;
@@ -66,9 +72,13 @@ export function GetStatus():Promise<main.StatusInfo>;
 
 export function GetTunnelStatus():Promise<main.TunnelStatus>;
 
+export function GetWarpCredentialFromKeychain():Promise<Record<string, string>>;
+
 export function ImportCredentials(arg1:string):Promise<string>;
 
 export function ImportLocalAccount():Promise<main.Account>;
+
+export function ImportWarpCredentialFromKeychain():Promise<string>;
 
 export function ListKeychainSources():Promise<Array<main.KeychainSource>>;
 
@@ -92,6 +102,8 @@ export function RefreshNow():Promise<string>;
 
 export function SaveAccountsToFile(arg1:string,arg2:string):Promise<void>;
 
+export function SaveClaudeCodeConfig(arg1:string,arg2:string):Promise<void>;
+
 export function SaveConfig(arg1:string,arg2:number,arg3:string,arg4:string):Promise<string>;
 
 export function SaveCredentialsRaw(arg1:string):Promise<string>;
@@ -101,6 +113,8 @@ export function SavePromptTemplate(arg1:main.PromptTemplate):Promise<void>;
 export function SaveServerSyncConfig(arg1:string,arg2:string):Promise<void>;
 
 export function SaveTunnelConfig(arg1:main.TunnelConfig):Promise<string>;
+
+export function SetBackend(arg1:string):Promise<string>;
 
 export function SetExternalTunnel(arg1:string):Promise<string>;
 

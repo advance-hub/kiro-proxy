@@ -25,20 +25,21 @@ func (a *App) UploadCredentialsToServer(serverURL, activationCode, userName stri
 		return "", fmt.Errorf("激活码不能为空")
 	}
 
-	// 1. 读取本地凭证
+	// 1. 读取本地凭证（支持单对象和数组格式）
 	dir, err := getDataDir()
 	if err != nil {
 		return "", err
 	}
 	credsPath := filepath.Join(dir, "credentials.json")
 
-	data, err := os.ReadFile(credsPath)
+	cf, err := readFirstCredential(credsPath)
 	if err != nil {
 		return "", fmt.Errorf("读取凭证失败: %v", err)
 	}
-
+	// 转为 map 以便构造上传请求
+	cfBytes, _ := json.Marshal(cf)
 	var rawCreds map[string]interface{}
-	if err := json.Unmarshal(data, &rawCreds); err != nil {
+	if err := json.Unmarshal(cfBytes, &rawCreds); err != nil {
 		return "", fmt.Errorf("解析凭证失败: %v", err)
 	}
 

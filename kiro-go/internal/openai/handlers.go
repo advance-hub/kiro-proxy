@@ -1,10 +1,10 @@
 package openai
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +13,8 @@ import (
 	"kiro-go/internal/common"
 	"kiro-go/internal/kiro"
 	"kiro-go/internal/kiro/parser"
+	"kiro-go/internal/logger"
+	"kiro-go/internal/model"
 
 	"github.com/google/uuid"
 )
@@ -37,9 +39,13 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request, provider *kir
 		return
 	}
 
+	rid := common.GetRequestIDFromContext(r)
+	actCode := common.GetActCodeFromContext(r)
+	rlog := logger.NewContext(logger.CatRequest, rid, logger.MaskKey(actCode))
+
+	rlog.Debug("收到 OpenAI 请求", logger.F{"body_size": len(body)})
+
 	req := convertOpenAIToAnthropic(openaiReq)
-	log.Printf("POST /v1/chat/completions model=%s stream=%v messages=%d tools=%d thinking=%v",
-		req.Model, req.Stream, len(req.Messages), len(req.Tools), req.Thinking != nil && req.Thinking.Type == "enabled")
 
 	kiroBody, err := anthropic.ConvertToKiroRequest(req)
 	if err != nil {
@@ -49,7 +55,6 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request, provider *kir
 
 	start := time.Now()
 	creds := common.GetCredsFromContext(r)
-	actCode := common.GetActCodeFromContext(r)
 	var resp *http.Response
 	if creds != nil {
 		resp, err = provider.CallWithCredentials(kiroBody, creds, actCode)
@@ -58,23 +63,35 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request, provider *kir
 	}
 	elapsed := time.Since(start)
 	if err != nil {
-		log.Printf("[RESP] /v1/chat/completions model=%s ERROR after %v: %v", req.Model, elapsed, err)
+		rlog.Error("上游请求失败", logger.F{
+			"model":   req.Model,
+			"latency": elapsed.String(),
+			"error":   err.Error(),
+		})
 		writeOpenAIError(w, http.StatusBadGateway, "server_error", err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
-	log.Printf("[RESP] /v1/chat/completions model=%s status=%d latency=%v", req.Model, resp.StatusCode, elapsed)
+	rlog.Info("上游响应", logger.F{
+		"model":   req.Model,
+		"status":  resp.StatusCode,
+		"latency": elapsed.String(),
+		"stream":  req.Stream,
+	})
 
 	if resp.StatusCode != 200 {
 		respBody, _ := io.ReadAll(resp.Body)
-		log.Printf("[RESP] Upstream error body: %s", string(respBody))
+		rlog.Error("上游错误", logger.F{
+			"status": resp.StatusCode,
+			"body":   logger.TruncateBody(string(respBody), 500),
+		})
 		writeOpenAIError(w, resp.StatusCode, "api_error", fmt.Sprintf("Upstream error: %d %s", resp.StatusCode, string(respBody)))
 		return
 	}
 
 	if req.Stream {
-		handleStreamResponse(w, resp, req)
+		handleStreamResponse(w, resp, req, provider, openaiReq, creds, actCode)
 	} else {
 		handleNonStreamResponse(w, resp, req)
 	}
@@ -114,6 +131,27 @@ func convertOpenAIToAnthropic(req map[string]interface{}) *anthropic.MessagesReq
 		maxTokens = int(mt)
 	} else if mt, ok := req["max_tokens"].(float64); ok && mt > 0 {
 		maxTokens = int(mt)
+	}
+
+	// Truncation Recovery: 检查并注入截断恢复消息
+	// 参考 kiro-gateway routes_openai.py
+	if messages, ok := req["messages"].([]interface{}); ok {
+		var msgMaps []map[string]interface{}
+		for _, m := range messages {
+			if msgMap, ok := m.(map[string]interface{}); ok {
+				msgMaps = append(msgMaps, msgMap)
+			}
+		}
+		recoveredMsgs, injected := common.InjectTruncationRecoveryOpenAI(msgMaps)
+		if injected {
+			logger.Infof(logger.CatRequest, "截断恢复: 已注入恢复消息")
+			// 转换回 []interface{}
+			var newMessages []interface{}
+			for _, m := range recoveredMsgs {
+				newMessages = append(newMessages, m)
+			}
+			req["messages"] = newMessages
+		}
 	}
 
 	var systemParts []string
@@ -330,17 +368,61 @@ func extractTextFromContent(content interface{}) string {
 }
 
 // buildAssistantContent 构建 assistant 消息的 Anthropic content blocks
-// 处理 text + tool_calls → text block + tool_use blocks
+// 支持两种格式：
+// 1. OpenAI 格式：content(string) + tool_calls 数组
+// 2. Anthropic 格式：content 是 [{type:"text",...}, {type:"tool_use",...}] 数组
 func buildAssistantContent(msg map[string]interface{}) []map[string]interface{} {
 	var blocks []map[string]interface{}
 
-	// 文本内容
+	// 检查 content 是否是数组（Anthropic 格式）
+	if contentArr, ok := msg["content"].([]interface{}); ok {
+		for _, item := range contentArr {
+			block, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			blockType, _ := block["type"].(string)
+			switch blockType {
+			case "text":
+				text, _ := block["text"].(string)
+				if text != "" {
+					blocks = append(blocks, map[string]interface{}{"type": "text", "text": text})
+				}
+			case "tool_use":
+				// 直接保留 tool_use block
+				id, _ := block["id"].(string)
+				name, _ := block["name"].(string)
+				input := block["input"]
+				if input == nil {
+					input = map[string]interface{}{}
+				}
+				blocks = append(blocks, map[string]interface{}{
+					"type":  "tool_use",
+					"id":    id,
+					"name":  name,
+					"input": input,
+				})
+			case "thinking":
+				// 保留 thinking block
+				thinking, _ := block["thinking"].(string)
+				if thinking != "" {
+					blocks = append(blocks, map[string]interface{}{"type": "thinking", "thinking": thinking})
+				}
+			}
+		}
+		// 如果数组中提取到了 blocks，直接返回（不再处理 tool_calls）
+		if len(blocks) > 0 {
+			return blocks
+		}
+	}
+
+	// OpenAI 格式：content 是字符串
 	text := extractTextFromContent(msg["content"])
 	if text != "" {
 		blocks = append(blocks, map[string]interface{}{"type": "text", "text": text})
 	}
 
-	// tool_calls → tool_use blocks
+	// tool_calls → tool_use blocks（OpenAI 格式）
 	if toolCalls, ok := msg["tool_calls"].([]interface{}); ok {
 		for _, tc := range toolCalls {
 			tcMap, ok := tc.(map[string]interface{})
@@ -486,7 +568,7 @@ func convertOpenAITool(tool map[string]interface{}) map[string]interface{} {
 
 	// 工具名长度校验（Kiro API 限制 64 字符）
 	if len(name) > 64 {
-		log.Printf("警告: 工具名 '%s' 超过 64 字符限制 (%d)，将截断", name, len(name))
+		logger.Warnf(logger.CatRequest, "工具名超过64字符限制(%d)，已截断: %s", len(name), name[:32])
 		name = name[:64]
 	}
 
@@ -570,7 +652,7 @@ func sanitizeJSONSchema(schema map[string]interface{}) map[string]interface{} {
 // - 正确的 finish_reason（stop / tool_calls）
 // - usage 统计
 
-func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthropic.MessagesRequest) {
+func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthropic.MessagesRequest, provider *kiro.Provider, openaiReq map[string]interface{}, creds *model.KiroCredentials, actCode string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeOpenAIError(w, http.StatusInternalServerError, "server_error", "Streaming not supported")
@@ -590,7 +672,8 @@ func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthr
 	writeSSEChunk(w, flusher, chatID, created, model, map[string]interface{}{"role": "assistant", "content": ""}, nil)
 
 	decoder := parser.NewDecoder()
-	buf := make([]byte, 32*1024)
+	// 使用 bufio.Reader 进行流式读取，避免固定 buffer 限制
+	reader := bufio.NewReaderSize(resp.Body, 64*1024) // 64KB 读取缓冲区
 
 	// 使用 Anthropic StreamContext 处理 thinking 提取
 	thinkingEnabled := req.Thinking != nil && req.Thinking.Type == "enabled"
@@ -603,17 +686,26 @@ func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthr
 	toolIndexMap := make(map[string]int)
 	toolNameSent := make(map[string]bool)
 	outputTokens := 0
+	var fullContent strings.Builder                // 收集完整文本内容（用于截断检测）
+	toolCollector := common.NewToolCallCollector() // 收集 tool_calls（用于截断检测）
+	streamCompletedNormally := false               // 流是否正常完成
+	totalBytesRead := 0                            // 累计读取字节数
 
+	// 流式读取，每次读取可用数据
+	buf := make([]byte, 256*1024) // 256KB 临时缓冲区
 	for {
-		n, err := resp.Body.Read(buf)
+		n, err := reader.Read(buf)
 		if n > 0 {
+			totalBytesRead += n
 			decoder.Feed(buf[:n])
 			frames, _ := decoder.Decode()
 			for _, frame := range frames {
 				event, parseErr := kiro.ParseEvent(frame)
 				if parseErr != nil {
+					logger.Warnf(logger.CatStream, "事件解析失败: %v", parseErr)
 					continue
 				}
+				logger.Debugf(logger.CatStream, "Kiro事件: type=%s contentLen=%d", event.Type, len(event.Content))
 
 				// 通过 Anthropic StreamContext 处理（提取 thinking）
 				sseEvents := streamCtx.ProcessKiroEvent(event)
@@ -635,6 +727,7 @@ func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthr
 							text, _ := delta["text"].(string)
 							if text != "" {
 								outputTokens += anthropic.CountTokens(text)
+								fullContent.WriteString(text)
 								writeSSEChunk(w, flusher, chatID, created, model,
 									map[string]interface{}{"content": text}, nil)
 							}
@@ -661,6 +754,7 @@ func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthr
 					}
 					if !toolNameSent[event.ToolUseID] && event.ToolName != "" {
 						toolNameSent[event.ToolUseID] = true
+						toolCollector.AddToolName(event.ToolUseID, event.ToolName)
 						writeSSEChunk(w, flusher, chatID, created, model, nil,
 							[]map[string]interface{}{{
 								"index": idx,
@@ -674,6 +768,7 @@ func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthr
 					}
 					if event.ToolInput != "" {
 						outputTokens += anthropic.CountTokens(event.ToolInput)
+						toolCollector.AppendArguments(event.ToolUseID, event.ToolInput)
 						writeSSEChunk(w, flusher, chatID, created, model, nil,
 							[]map[string]interface{}{{
 								"index": idx,
@@ -683,7 +778,14 @@ func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthr
 							}})
 					}
 				} else if event.Type == "error" || event.Type == "exception" {
-					log.Printf("Kiro 流式错误: %s %s", event.ErrorCode, event.ErrorMessage)
+					logger.WarnFields(logger.CatStream, "Kiro流式错误", logger.F{
+						"error_code": event.ErrorCode,
+						"message":    event.ErrorMessage,
+					})
+					streamCompletedNormally = true
+				} else if event.Type == "metering" || event.Type == "context_usage" {
+					// meteringEvent / contextUsageEvent 出现在流末尾，表示正常完成
+					streamCompletedNormally = true
 				}
 			}
 		}
@@ -729,6 +831,144 @@ func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthr
 	if hasToolUse || streamCtx.HasToolUse() {
 		finishReason = "tool_calls"
 	}
+
+	contentLength := fullContent.Len()
+	contentStr := fullContent.String()
+
+	// 检测模型提前停止：finishReason=stop 但输出以不完整句子结尾
+	prematureStop := false
+	shouldAutoContinue := false
+	if finishReason == "stop" && !hasToolUse && contentLength > 0 {
+		trimmed := strings.TrimSpace(contentStr)
+		if len(trimmed) > 0 {
+			lastChar := trimmed[len(trimmed)-1]
+			// 检测以冒号、逗号、省略号、破折号等结尾（可能未完成）
+			if lastChar == ':' || lastChar == ',' || lastChar == '-' || strings.HasSuffix(trimmed, "...") {
+				prematureStop = true
+				shouldAutoContinue = true
+				logger.Infof(logger.CatStream, "检测到提前停止(末尾字符='%c')，将自动续写", lastChar)
+			}
+		}
+	}
+
+	logger.InfoFields(logger.CatStream, "流式输出完成", logger.F{
+		"output_tokens":    outputTokens,
+		"content_chars":    contentLength,
+		"stream_completed": streamCompletedNormally,
+		"has_tool_use":     hasToolUse,
+		"finish_reason":    finishReason,
+		"premature_stop":   prematureStop,
+		"auto_continue":    shouldAutoContinue,
+	})
+	logger.Debugf(logger.CatStream, "流式输出内容: %s", logger.TruncateBody(contentStr, 200))
+
+	// 自动继续：如果检测到提前停止，发起新请求并继续流式输出
+	if shouldAutoContinue && openaiReq != nil {
+		logger.Infof(logger.CatStream, "自动续写: 注入Continue消息并发起新请求")
+
+		// 复制原始请求
+		continueOpenAIReq := make(map[string]interface{})
+		for k, v := range openaiReq {
+			continueOpenAIReq[k] = v
+		}
+
+		// 注入 "Continue" 消息
+		if messages, ok := continueOpenAIReq["messages"].([]interface{}); ok {
+			// 添加 assistant 消息（当前输出）
+			messages = append(messages, map[string]interface{}{
+				"role":    "assistant",
+				"content": contentStr,
+			})
+			// 添加 user 消息（Continue）
+			messages = append(messages, map[string]interface{}{
+				"role":    "user",
+				"content": "Continue",
+			})
+			continueOpenAIReq["messages"] = messages
+
+			// 转换并发起新请求
+			continueReq := convertOpenAIToAnthropic(continueOpenAIReq)
+			continueBody, err := anthropic.ConvertToKiroRequest(continueReq)
+			if err == nil {
+				// 使用与初始请求相同的凭据
+				var continueResp *http.Response
+				continueCreds := creds
+				if continueCreds == nil && actCode != "" && provider.UserCredsMgr != nil {
+					continueCreds = provider.UserCredsMgr.GetCredentials(actCode)
+					logger.Debugf(logger.CatStream, "自动续写: 从UserCredsMgr获取凭证 user=%s", logger.MaskKey(actCode))
+				}
+				if continueCreds != nil {
+					continueResp, err = provider.CallWithCredentials(continueBody, continueCreds, actCode)
+				} else {
+					logger.Warnf(logger.CatStream, "自动续写: 无可用凭证，跳过")
+					err = fmt.Errorf("no credentials for auto-continue")
+				}
+				if err == nil && continueResp != nil && continueResp.StatusCode == 200 {
+					logger.Infof(logger.CatStream, "自动续写: 续写请求已发起")
+					// 继续读取并流式输出（不发送初始 role chunk，直接输出内容）
+					// 简化实现：直接在当前流中继续输出
+					continueReader := bufio.NewReaderSize(continueResp.Body, 64*1024)
+					continueBuf := make([]byte, 256*1024)
+					continueDecoder := parser.NewDecoder()
+
+					for {
+						n, err := continueReader.Read(continueBuf)
+						if n > 0 {
+							continueDecoder.Feed(continueBuf[:n])
+							frames, _ := continueDecoder.Decode()
+							for _, frame := range frames {
+								event, parseErr := kiro.ParseEvent(frame)
+								if parseErr != nil {
+									continue
+								}
+								// 只处理文本内容，忽略其他事件
+								if event.Type == "assistant_response" && event.Content != "" {
+									writeSSEChunk(w, flusher, chatID, created, model,
+										map[string]interface{}{"content": event.Content}, nil)
+								}
+							}
+						}
+						if err != nil {
+							break
+						}
+					}
+					continueResp.Body.Close()
+					logger.Infof(logger.CatStream, "自动续写: 续写完成")
+					// 继续后，使用 stop 作为最终 finish_reason
+					finishReason = "stop"
+				} else {
+					logger.Warnf(logger.CatStream, "自动续写失败: %v", err)
+				}
+			}
+		}
+	}
+
+	// Truncation Detection: 完整的截断检测
+	// 参考 kiro-gateway streaming_openai.py + parsers.py
+	if common.ShouldInjectRecovery() {
+		// 1. 检测 tool_calls 截断（JSON 完整性分析）
+		if hasToolUse {
+			truncatedCount := toolCollector.DetectTruncations()
+			if truncatedCount > 0 {
+				logger.Warnf(logger.CatStream, "截断检测: %d 个tool_call被截断，下次请求将恢复", truncatedCount)
+			}
+		}
+
+		// 2. 检测 content 截断（流未正常完成 + 有内容 + 无 tool_calls）
+		contentStr := fullContent.String()
+		contentWasTruncated := !streamCompletedNormally && len(contentStr) > 0 && !hasToolUse
+		if contentWasTruncated {
+			common.SaveContentTruncation(contentStr)
+			logger.Warnf(logger.CatStream, "截断检测: 内容被截断，流未正常完成，共%d字符", len(contentStr))
+		}
+	}
+
+	// 从 StreamContext 获取 input tokens（由 context_usage 事件计算）
+	promptTokens := 0
+	if streamCtx.ContextInputToks != nil {
+		promptTokens = *streamCtx.ContextInputToks
+	}
+
 	finalChunk := map[string]interface{}{
 		"id": chatID, "object": "chat.completion.chunk", "created": created, "model": model,
 		"choices": []map[string]interface{}{{
@@ -737,9 +977,9 @@ func handleStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthr
 			"finish_reason": finishReason,
 		}},
 		"usage": map[string]interface{}{
-			"prompt_tokens":     0,
+			"prompt_tokens":     promptTokens,
 			"completion_tokens": outputTokens,
-			"total_tokens":      outputTokens,
+			"total_tokens":      promptTokens + outputTokens,
 		},
 	}
 	data, _ := json.Marshal(finalChunk)
@@ -767,11 +1007,369 @@ func writeSSEChunk(w http.ResponseWriter, flusher http.Flusher, chatID string, c
 	flusher.Flush()
 }
 
+// ── Anthropic 直连模式（backend=anthropic）──
+
+// HandleChatCompletionsDirect POST /v1/chat/completions（直连 Anthropic API）
+// OpenAI 请求 → Anthropic 格式 → DirectProvider → Anthropic SSE → OpenAI SSE
+func HandleChatCompletionsDirect(w http.ResponseWriter, r *http.Request, dp *anthropic.DirectProvider) {
+	if r.Method != http.MethodPost {
+		writeOpenAIError(w, http.StatusMethodNotAllowed, "invalid_request_error", "Method not allowed")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+	defer r.Body.Close()
+
+	var openaiReq map[string]interface{}
+	if err := json.Unmarshal(body, &openaiReq); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Invalid JSON")
+		return
+	}
+
+	logger.InfoFields(logger.CatRequest, "Anthropic直连请求", logger.F{
+		"model":  openaiReq["model"],
+		"stream": openaiReq["stream"],
+	})
+
+	req := convertOpenAIToAnthropic(openaiReq)
+
+	betaHeader := r.Header.Get("anthropic-beta")
+	resp, err := dp.CallAnthropic(req, betaHeader)
+	if err != nil {
+		logger.ErrorFields(logger.CatRequest, "Anthropic直连请求失败", logger.F{
+			"error": err.Error(),
+		})
+		writeOpenAIError(w, http.StatusBadGateway, "server_error", err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		logger.ErrorFields(logger.CatResponse, "Anthropic直连错误", logger.F{
+			"status": resp.StatusCode,
+			"body":   logger.TruncateBody(string(respBody), 500),
+		})
+		writeOpenAIError(w, resp.StatusCode, "api_error", fmt.Sprintf("Upstream error: %d %s", resp.StatusCode, string(respBody)))
+		return
+	}
+
+	if req.Stream {
+		handleDirectStreamResponse(w, resp, req)
+	} else {
+		handleDirectNonStreamResponse(w, resp, req)
+	}
+}
+
+// handleDirectStreamResponse 解析 Anthropic SSE 流 → OpenAI SSE chunks
+func handleDirectStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthropic.MessagesRequest) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeOpenAIError(w, http.StatusInternalServerError, "server_error", "Streaming not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	chatID := "chatcmpl-" + uuid.New().String()[:24]
+	created := time.Now().Unix()
+	modelName := req.Model
+
+	// 发送第一个 chunk（role）
+	writeSSEChunk(w, flusher, chatID, created, modelName, map[string]interface{}{"role": "assistant", "content": ""}, nil)
+
+	hasToolUse := false
+	toolCallIndex := 0
+	toolIndexMap := make(map[string]int)
+	toolNameSent := make(map[string]bool)
+	outputTokens := 0
+	promptTokens := 0
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+
+	var currentEventType string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "event: ") {
+			currentEventType = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		dataStr := strings.TrimPrefix(line, "data: ")
+		if dataStr == "" {
+			continue
+		}
+
+		var data map[string]interface{}
+		if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
+			continue
+		}
+
+		switch currentEventType {
+		case "content_block_delta":
+			delta, _ := data["delta"].(map[string]interface{})
+			if delta == nil {
+				continue
+			}
+			deltaType, _ := delta["type"].(string)
+
+			switch deltaType {
+			case "text_delta":
+				text, _ := delta["text"].(string)
+				if text != "" {
+					outputTokens += anthropic.CountTokens(text)
+					writeSSEChunk(w, flusher, chatID, created, modelName,
+						map[string]interface{}{"content": text}, nil)
+				}
+			case "thinking_delta":
+				thinking, _ := delta["thinking"].(string)
+				if thinking != "" {
+					outputTokens += anthropic.CountTokens(thinking)
+					writeSSEChunk(w, flusher, chatID, created, modelName,
+						map[string]interface{}{"reasoning_content": thinking}, nil)
+				}
+			case "input_json_delta":
+				// tool input delta
+				partialJSON, _ := delta["partial_json"].(string)
+				if partialJSON == "" {
+					continue
+				}
+				// 找到当前正在构建的 tool_use block
+				blockIdx, _ := data["index"].(float64)
+				toolUseID := fmt.Sprintf("toolu_%d", int(blockIdx))
+				// 用 content_block_start 里记录的真实 ID
+				if realID, exists := findToolIDByBlockIndex(toolIndexMap, int(blockIdx)); exists {
+					toolUseID = realID
+				}
+				idx, exists := toolIndexMap[toolUseID]
+				if exists {
+					outputTokens += anthropic.CountTokens(partialJSON)
+					writeSSEChunk(w, flusher, chatID, created, modelName, nil,
+						[]map[string]interface{}{{
+							"index": idx,
+							"function": map[string]interface{}{
+								"arguments": partialJSON,
+							},
+						}})
+				}
+			}
+
+		case "content_block_start":
+			contentBlock, _ := data["content_block"].(map[string]interface{})
+			if contentBlock == nil {
+				continue
+			}
+			blockType, _ := contentBlock["type"].(string)
+			if blockType == "tool_use" {
+				hasToolUse = true
+				toolID, _ := contentBlock["id"].(string)
+				toolName, _ := contentBlock["name"].(string)
+				blockIdx, _ := data["index"].(float64)
+
+				idx := toolCallIndex
+				toolIndexMap[toolID] = idx
+				// 也按 block index 记录映射
+				toolIndexMap[fmt.Sprintf("__block_%d", int(blockIdx))] = idx
+				toolCallIndex++
+
+				if !toolNameSent[toolID] && toolName != "" {
+					toolNameSent[toolID] = true
+					writeSSEChunk(w, flusher, chatID, created, modelName, nil,
+						[]map[string]interface{}{{
+							"index": idx,
+							"id":    toolID,
+							"type":  "function",
+							"function": map[string]interface{}{
+								"name":      toolName,
+								"arguments": "",
+							},
+						}})
+				}
+			}
+
+		case "message_delta":
+			// 提取 usage
+			if usage, ok := data["usage"].(map[string]interface{}); ok {
+				if ot, ok := usage["output_tokens"].(float64); ok && int(ot) > outputTokens {
+					outputTokens = int(ot)
+				}
+			}
+
+		case "message_start":
+			// 从 message_start 提取 input_tokens
+			if msg, ok := data["message"].(map[string]interface{}); ok {
+				if usage, ok := msg["usage"].(map[string]interface{}); ok {
+					if it, ok := usage["input_tokens"].(float64); ok {
+						promptTokens = int(it)
+					}
+				}
+			}
+		}
+	}
+
+	// 发送带 finish_reason 的最终 chunk
+	finishReason := "stop"
+	if hasToolUse {
+		finishReason = "tool_calls"
+	}
+
+	finalChunk := map[string]interface{}{
+		"id": chatID, "object": "chat.completion.chunk", "created": created, "model": modelName,
+		"choices": []map[string]interface{}{{
+			"index":         0,
+			"delta":         map[string]interface{}{},
+			"finish_reason": finishReason,
+		}},
+		"usage": map[string]interface{}{
+			"prompt_tokens":     promptTokens,
+			"completion_tokens": outputTokens,
+			"total_tokens":      promptTokens + outputTokens,
+		},
+	}
+	finalData, _ := json.Marshal(finalChunk)
+	fmt.Fprintf(w, "data: %s\n\n", string(finalData))
+	flusher.Flush()
+
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+	flusher.Flush()
+}
+
+// findToolIDByBlockIndex 通过 Anthropic block index 查找 tool ID
+func findToolIDByBlockIndex(toolIndexMap map[string]int, blockIdx int) (string, bool) {
+	key := fmt.Sprintf("__block_%d", blockIdx)
+	if _, exists := toolIndexMap[key]; exists {
+		// 反查：找到 block index 对应的真实 tool ID
+		targetIdx := toolIndexMap[key]
+		for id, idx := range toolIndexMap {
+			if idx == targetIdx && !strings.HasPrefix(id, "__block_") {
+				return id, true
+			}
+		}
+	}
+	return "", false
+}
+
+// handleDirectNonStreamResponse 解析 Anthropic JSON 响应 → OpenAI JSON
+func handleDirectNonStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthropic.MessagesRequest) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadGateway, "server_error", "Failed to read response: "+err.Error())
+		return
+	}
+
+	var anthropicResp map[string]interface{}
+	if err := json.Unmarshal(body, &anthropicResp); err != nil {
+		writeOpenAIError(w, http.StatusBadGateway, "server_error", "Invalid response JSON")
+		return
+	}
+
+	// 提取内容
+	var fullText strings.Builder
+	var fullReasoning strings.Builder
+	var toolCalls []map[string]interface{}
+	finishReason := "stop"
+
+	if content, ok := anthropicResp["content"].([]interface{}); ok {
+		for _, block := range content {
+			blockMap, ok := block.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			blockType, _ := blockMap["type"].(string)
+			switch blockType {
+			case "text":
+				text, _ := blockMap["text"].(string)
+				fullText.WriteString(text)
+			case "thinking":
+				thinking, _ := blockMap["thinking"].(string)
+				fullReasoning.WriteString(thinking)
+			case "tool_use":
+				id, _ := blockMap["id"].(string)
+				name, _ := blockMap["name"].(string)
+				input := blockMap["input"]
+				argsBytes, _ := json.Marshal(input)
+				toolCalls = append(toolCalls, map[string]interface{}{
+					"id":   id,
+					"type": "function",
+					"function": map[string]interface{}{
+						"name":      name,
+						"arguments": string(argsBytes),
+					},
+				})
+			}
+		}
+	}
+
+	if stopReason, ok := anthropicResp["stop_reason"].(string); ok {
+		switch stopReason {
+		case "tool_use":
+			finishReason = "tool_calls"
+		case "end_turn":
+			finishReason = "stop"
+		case "max_tokens":
+			finishReason = "length"
+		default:
+			finishReason = "stop"
+		}
+	}
+
+	message := map[string]interface{}{
+		"role":    "assistant",
+		"content": fullText.String(),
+	}
+	if fullReasoning.Len() > 0 {
+		message["reasoning_content"] = fullReasoning.String()
+	}
+	if len(toolCalls) > 0 {
+		message["tool_calls"] = toolCalls
+	}
+
+	// 提取 usage
+	promptTokens := 0
+	completionTokens := 0
+	if usage, ok := anthropicResp["usage"].(map[string]interface{}); ok {
+		if it, ok := usage["input_tokens"].(float64); ok {
+			promptTokens = int(it)
+		}
+		if ot, ok := usage["output_tokens"].(float64); ok {
+			completionTokens = int(ot)
+		}
+	}
+
+	common.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"id": "chatcmpl-" + uuid.New().String()[:24], "object": "chat.completion",
+		"created": time.Now().Unix(), "model": req.Model,
+		"choices": []map[string]interface{}{
+			{"index": 0, "message": message, "finish_reason": finishReason},
+		},
+		"usage": map[string]interface{}{
+			"prompt_tokens":     promptTokens,
+			"completion_tokens": completionTokens,
+			"total_tokens":      promptTokens + completionTokens,
+		},
+	})
+}
+
 // ── 非流式响应（Kiro → OpenAI JSON）──
 
 func handleNonStreamResponse(w http.ResponseWriter, resp *http.Response, req *anthropic.MessagesRequest) {
 	decoder := parser.NewDecoder()
-	buf := make([]byte, 32*1024)
+	// 使用 bufio.Reader 进行流式读取
+	reader := bufio.NewReaderSize(resp.Body, 64*1024)
 
 	// 使用 Anthropic StreamContext 处理 thinking 提取
 	thinkingEnabled := req.Thinking != nil && req.Thinking.Type == "enabled"
@@ -791,8 +1389,9 @@ func handleNonStreamResponse(w http.ResponseWriter, resp *http.Response, req *an
 	toolCollectors := make(map[string]*toolUseCollector)
 	var toolOrder []string
 
+	buf := make([]byte, 256*1024) // 256KB 临时缓冲区
 	for {
-		n, err := resp.Body.Read(buf)
+		n, err := reader.Read(buf)
 		if n > 0 {
 			decoder.Feed(buf[:n])
 			frames, _ := decoder.Decode()
@@ -855,6 +1454,31 @@ func handleNonStreamResponse(w http.ResponseWriter, resp *http.Response, req *an
 		}
 	}
 
+	// Truncation Detection（非流式）
+	// 参考 kiro-gateway streaming_openai.py
+	if common.ShouldInjectRecovery() {
+		// 1. 检测 tool_calls 截断
+		if len(toolOrder) > 0 {
+			truncCollector := common.NewToolCallCollector()
+			for _, id := range toolOrder {
+				tc := toolCollectors[id]
+				truncCollector.AddToolName(id, tc.Name)
+				if args := tc.Input.String(); args != "" {
+					truncCollector.AppendArguments(id, args)
+				}
+			}
+			if truncated := truncCollector.DetectTruncations(); truncated > 0 {
+				logger.Warnf(logger.CatStream, "截断检测(非流式): %d 个tool_call被截断", truncated)
+			}
+		}
+		// 2. 检测 content 截断（非流式一般不会截断 content，但以防万一）
+		contentStr := fullText.String()
+		if len(contentStr) > 0 && len(toolOrder) == 0 {
+			// 非流式没有 streamCompletedNormally 信号，跳过 content 截断检测
+			// content 截断主要发生在流式模式
+		}
+	}
+
 	// 构建 message
 	message := map[string]interface{}{
 		"role":    "assistant",
@@ -886,6 +1510,12 @@ func handleNonStreamResponse(w http.ResponseWriter, resp *http.Response, req *an
 		message["tool_calls"] = toolCalls
 	}
 
+	// 从 StreamContext 获取 input tokens
+	promptTokens := 0
+	if streamCtx.ContextInputToks != nil {
+		promptTokens = *streamCtx.ContextInputToks
+	}
+
 	common.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"id": "chatcmpl-" + uuid.New().String()[:24], "object": "chat.completion",
 		"created": time.Now().Unix(), "model": req.Model,
@@ -893,9 +1523,9 @@ func handleNonStreamResponse(w http.ResponseWriter, resp *http.Response, req *an
 			{"index": 0, "message": message, "finish_reason": finishReason},
 		},
 		"usage": map[string]interface{}{
-			"prompt_tokens":     0,
+			"prompt_tokens":     promptTokens,
 			"completion_tokens": outputTokens,
-			"total_tokens":      outputTokens,
+			"total_tokens":      promptTokens + outputTokens,
 		},
 	})
 }

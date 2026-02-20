@@ -6,6 +6,7 @@ node_modules
 .env.production.local
 dist
 target
+杂
 
 # Wails build output
 kiro-launcher/build/

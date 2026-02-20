@@ -72,8 +72,13 @@ func (a *App) StartProxy() (string, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("配置文件不存在，请先保存配置")
 	}
-	if _, err := os.Stat(credsPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("凭据文件不存在，请先登录或获取凭据")
+
+	// 只有非 warp 模式才要求 Kiro 凭据文件
+	backend, _ := a.GetBackend()
+	if backend != "warp" {
+		if _, err := os.Stat(credsPath); os.IsNotExist(err) {
+			return "", fmt.Errorf("凭据文件不存在，请先登录或获取凭据")
+		}
 	}
 
 	if err := a.startProxyInternal(configPath, credsPath); err != nil {
@@ -84,23 +89,9 @@ func (a *App) StartProxy() (string, error) {
 	// 自动导出环境变量到 shell rc
 	baseURL := fmt.Sprintf("http://%s:%d/v1", cfg.Host, cfg.Port)
 	if err := a.ExportCredsToShellRC(baseURL); err != nil {
-		// 导出失败不影响代理启动，仅记录日志
 		a.pushLog(fmt.Sprintf("警告: 导出环境变量失败: %v", err))
 	} else {
 		a.pushLog("已自动更新 shell 环境变量 (KIRO_API_KEY, KIRO_BASE_URL)")
-	}
-
-	// 自动上传凭证到服务器（如果配置了服务器同步）
-	if syncCfg, err := a.GetServerSyncConfig(); err == nil && syncCfg.ServerURL != "" && syncCfg.ActivationCode != "" {
-		serverURL := syncCfg.ServerURL
-		activationCode := syncCfg.ActivationCode
-
-		a.pushLog(fmt.Sprintf("正在上传凭证到服务器: %s", serverURL))
-		if msg, err := a.UploadCredentialsToServer(serverURL, activationCode, ""); err != nil {
-			a.pushLog(fmt.Sprintf("警告: 上传凭证失败: %v", err))
-		} else {
-			a.pushLog(msg)
-		}
 	}
 
 	return fmt.Sprintf("代理已启动: http://%s:%d", cfg.Host, cfg.Port), nil
@@ -227,6 +218,12 @@ func (a *App) GetProxyLogs() []string {
 	return result
 }
 
+func (a *App) ClearProxyLogs() {
+	a.logsMu.Lock()
+	defer a.logsMu.Unlock()
+	a.logs = nil
+}
+
 // ── One Click Start ──
 
 func (a *App) OneClickStart() (string, error) {
@@ -234,50 +231,11 @@ func (a *App) OneClickStart() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	credsPath := filepath.Join(dir, "credentials.json")
 
-	// 1. Try keychain
-	creds, kcErr := readKiroCredentials()
-	if kcErr == nil {
-		if err := writeKeychainCredentials(creds); err != nil {
-			// non-fatal
-			logWarn("写入 keychain 凭据失败: %v", err)
-		}
-	} else {
-		if _, err := os.Stat(credsPath); os.IsNotExist(err) {
-			return "", fmt.Errorf("未找到凭据，请先通过 Kiro IDE 登录: %v", kcErr)
-		}
-	}
+	// 读取当前 backend 模式
+	backend, _ := a.GetBackend()
 
-	// 2. Refresh token（异步，不阻塞启动）
-	go func() {
-		if _, err := os.Stat(credsPath); err != nil {
-			return
-		}
-		cf, readErr := readFirstCredential(credsPath)
-		if readErr != nil {
-			return
-		}
-		// 最多重试 2 次，间隔 3 秒
-		for attempt := 1; attempt <= 2; attempt++ {
-			refreshed, err := refreshCredentials(cf)
-			if err == nil {
-				saveCredentialsFileSmart(refreshed)
-				logInfo("Token 刷新成功 (第 %d 次尝试)", attempt)
-				// 刷新成功后同步凭证到服务器
-				autoUploadToServer()
-				return
-			}
-			logWarn("Token 刷新失败 (第 %d 次尝试，不影响启动): %v", attempt, err)
-			if attempt < 2 {
-				time.Sleep(3 * time.Second)
-			}
-		}
-		// 即使刷新失败也尝试同步（用旧 token）
-		autoUploadToServer()
-	}()
-
-	// 3. Ensure config exists
+	// 确保 config 存在
 	configPath := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		cfg := defaultConfig()
@@ -285,9 +243,90 @@ func (a *App) OneClickStart() (string, error) {
 		os.WriteFile(configPath, data, 0644)
 	}
 
+	credsPath := filepath.Join(dir, "credentials.json")
+
+	if backend == "warp" {
+		// ── Warp 模式：不需要 Kiro 凭据，直接启动 ──
+		// 确保 credentials.json 存在（kiro-go 启动需要，即使是空数组）
+		if _, err := os.Stat(credsPath); os.IsNotExist(err) {
+			os.WriteFile(credsPath, []byte("[]"), 0644)
+		}
+	} else {
+		// ── Kiro 模式：走原有的 keychain + token 刷新流程 ──
+		a.oneClickKiroSetup(dir, credsPath)
+	}
+
 	cfg, _ := a.GetConfig()
 	if err := a.startProxyInternal(configPath, credsPath); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("代理已启动: http://%s:%d", cfg.Host, cfg.Port), nil
+
+	modeLabel := "Kiro"
+	if backend == "warp" {
+		modeLabel = "Warp"
+	}
+	return fmt.Sprintf("代理已启动 (%s 模式): http://%s:%d", modeLabel, cfg.Host, cfg.Port), nil
+}
+
+// oneClickKiroSetup Kiro 模式的凭证准备（keychain 读取 + token 刷新）
+func (a *App) oneClickKiroSetup(dir, credsPath string) {
+	// 1. Try keychain
+	creds, kcErr := readKiroCredentials()
+	if kcErr == nil {
+		if err := writeKeychainCredentials(creds); err != nil {
+			logWarn("写入 keychain 凭据失败: %v", err)
+		}
+	} else {
+		if _, err := os.Stat(credsPath); os.IsNotExist(err) {
+			logWarn("未找到 Kiro 凭据: %v", kcErr)
+			return
+		}
+	}
+
+	// 2. Refresh token（同步等待最多 8 秒）
+	tokenRefreshed := false
+	if _, statErr := os.Stat(credsPath); statErr == nil {
+		if cf, readErr := readFirstCredential(credsPath); readErr == nil {
+			type refreshResult struct {
+				creds *CredentialsFile
+				err   error
+			}
+			ch := make(chan refreshResult, 1)
+			go func() {
+				r, e := refreshCredentials(cf)
+				ch <- refreshResult{r, e}
+			}()
+			select {
+			case res := <-ch:
+				if res.err == nil {
+					saveCredentialsFileSmart(res.creds)
+					logInfo("Token 刷新成功（启动前同步刷新）")
+					tokenRefreshed = true
+				} else {
+					logWarn("Token 刷新失败（不影响启动）: %v", res.err)
+				}
+			case <-time.After(8 * time.Second):
+				logWarn("Token 刷新超时(8s)，先启动代理，后台继续刷新")
+				go func() {
+					res := <-ch
+					if res.err == nil {
+						saveCredentialsFileSmart(res.creds)
+						logInfo("Token 后台刷新成功")
+						notifyProxyReload()
+						autoUploadToServer()
+					} else {
+						logWarn("Token 后台刷新也失败: %v", res.err)
+						autoUploadToServer()
+					}
+				}()
+			}
+		}
+	}
+	if tokenRefreshed {
+		go func() {
+			time.Sleep(1 * time.Second)
+			notifyProxyReload()
+			autoUploadToServer()
+		}()
+	}
 }

@@ -50,6 +50,8 @@ declare global {
           // Log Management
           GetRecentLogs(lines: number): Promise<string>;
           GetLogFilePath(): Promise<string>;
+          ClearProxyLogs(): Promise<void>;
+          ClearLogFile(): Promise<void>;
           // Server Sync
           UploadCredentialsToServer(serverURL: string, activationCode: string, userName: string): Promise<string>;
           GetServerSyncConfig(): Promise<any>;
@@ -62,6 +64,9 @@ declare global {
           StopTunnel(): Promise<string>;
           SetExternalTunnel(url: string): Promise<string>;
           ClearExternalTunnel(): Promise<string>;
+          // Backend Mode
+          GetBackend(): Promise<string>;
+          SetBackend(backend: string): Promise<string>;
         };
       };
     };

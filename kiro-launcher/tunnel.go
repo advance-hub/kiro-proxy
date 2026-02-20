@@ -384,7 +384,7 @@ func (a *App) checkTunnelPermission() error {
 	reqData, _ := json.Marshal(reqBody)
 
 	resp, err := http.Post(
-		ActivationServer+"/api/tunnel/check",
+		getActivationServerURL()+"/api/tunnel/check",
 		"application/json",
 		strings.NewReader(string(reqData)),
 	)

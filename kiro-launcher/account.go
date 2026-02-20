@@ -601,32 +601,38 @@ func (a *App) SwitchAccount(id string) (string, error) {
 	return fmt.Sprintf("已切换到 %s", account.Email), nil
 }
 
-// autoUploadToServer 切换账号后自动上传凭证到服务器
+// autoUploadToServer 切换账号后自动上传凭证到线上服务器
+// 只在软件已激活时才同步（用于 Cursor 公网场景）
 func autoUploadToServer() {
+	// 1. 检查软件激活状态
+	app := &App{}
+	activationData, err := app.CheckActivation()
+	if err != nil || !activationData.Activated || activationData.Code == "" {
+		return // 未激活或无激活码，跳过
+	}
+
+	activationCode := strings.ToUpper(activationData.Code)
+	serverURL := "http://117.72.183.248:13000" // 线上服务器地址
+
+	logInfo("自动同步凭证到服务器: %s (激活码: %s)", serverURL, activationCode)
+
+	// 2. 读取本地凭证
 	dir, err := getDataDir()
 	if err != nil {
+		logError("自动上传：获取数据目录失败: %v", err)
 		return
 	}
-	// 读取服务器同步配置
-	syncData, err := os.ReadFile(filepath.Join(dir, "server_sync.json"))
-	if err != nil {
-		return // 未配置服务器同步，跳过
-	}
-	var syncCfg ServerSyncConfig
-	if json.Unmarshal(syncData, &syncCfg) != nil || syncCfg.ServerURL == "" || syncCfg.ActivationCode == "" {
-		return
-	}
-
-	logInfo("自动同步凭证到服务器: %s (激活码: %s)", syncCfg.ServerURL, syncCfg.ActivationCode)
-
-	// 读取本地凭证
-	credsData, err := os.ReadFile(filepath.Join(dir, "credentials.json"))
+	credsPath := filepath.Join(dir, "credentials.json")
+	cf, err := readFirstCredential(credsPath)
 	if err != nil {
 		logError("自动上传：读取凭证失败: %v", err)
 		return
 	}
+	// 转为 map 以便构造上传请求
+	cfBytes, _ := json.Marshal(cf)
 	var rawCreds map[string]interface{}
-	if json.Unmarshal(credsData, &rawCreds) != nil {
+	if json.Unmarshal(cfBytes, &rawCreds) != nil {
+		logError("自动上传：序列化凭证失败")
 		return
 	}
 
@@ -647,22 +653,25 @@ func autoUploadToServer() {
 	}
 	if v, ok := rawCreds["region"].(string); ok && v != "" {
 		credentials["region"] = v
+		// 同时设置 authRegion 和 apiRegion，确保认证和 API 请求使用相同的区域
+		credentials["authRegion"] = v
+		credentials["apiRegion"] = v
 	}
 
 	payload, _ := json.Marshal(map[string]interface{}{
-		"activation_code": syncCfg.ActivationCode,
+		"activation_code": activationCode,
 		"credentials":     credentials,
 	})
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	url := syncCfg.ServerURL + "/api/admin/user-credentials"
+	url := serverURL + "/api/admin/user-credentials"
 	resp, err := client.Post(url, "application/json", bytes.NewBuffer(payload))
 	if err != nil {
 		logError("自动上传凭证到服务器失败: %v", err)
 		return
 	}
 	resp.Body.Close()
-	logInfo("✅ 已自动上传凭证到服务器 %s (状态: %d)", syncCfg.ServerURL, resp.StatusCode)
+	logInfo("✅ 已自动上传凭证到服务器 %s (状态: %d)", serverURL, resp.StatusCode)
 }
 
 // notifyProxyReload 通知本地代理重新加载凭据

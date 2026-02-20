@@ -12,19 +12,28 @@ import (
 // ── Config Commands ──
 
 func (a *App) SaveConfig(host string, port int, apiKey string, region string) (string, error) {
-	cfg := ProxyConfig{
-		Host:       host,
-		Port:       port,
-		ApiKey:     apiKey,
-		Region:     region,
-		TlsBackend: "rustls",
-	}
 	dir, err := getDataDir()
 	if err != nil {
 		return "", err
 	}
-	data, _ := json.MarshalIndent(cfg, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), data, 0644); err != nil {
+	configPath := filepath.Join(dir, "config.json")
+
+	// 读取现有配置，保留 kiro-go 的额外字段
+	existing := make(map[string]interface{})
+	if data, err := os.ReadFile(configPath); err == nil {
+		json.Unmarshal(data, &existing)
+	}
+
+	existing["host"] = host
+	existing["port"] = port
+	existing["apiKey"] = apiKey
+	existing["region"] = region
+	if _, ok := existing["tlsBackend"]; !ok {
+		existing["tlsBackend"] = "rustls"
+	}
+
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		return "", fmt.Errorf("写入配置文件失败: %v", err)
 	}
 
@@ -251,4 +260,56 @@ func (a *App) OpenDataDir() (string, error) {
 		return "", fmt.Errorf("打开目录失败: %v", err)
 	}
 	return dir, nil
+}
+
+// GetBackend 获取当前后端模式
+func (a *App) GetBackend() (string, error) {
+	dir, err := getDataDir()
+	if err != nil {
+		return "kiro", err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return "kiro", nil
+	}
+	var cfg map[string]interface{}
+	if json.Unmarshal(data, &cfg) != nil {
+		return "kiro", nil
+	}
+	if b, ok := cfg["backend"].(string); ok && b != "" {
+		return b, nil
+	}
+	return "kiro", nil
+}
+
+// SetBackend 切换后端模式 ("kiro" | "warp")
+func (a *App) SetBackend(backend string) (string, error) {
+	dir, err := getDataDir()
+	if err != nil {
+		return "", err
+	}
+	configPath := filepath.Join(dir, "config.json")
+
+	existing := make(map[string]interface{})
+	if data, err := os.ReadFile(configPath); err == nil {
+		json.Unmarshal(data, &existing)
+	}
+
+	existing["backend"] = backend
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return "", fmt.Errorf("写入配置失败: %v", err)
+	}
+
+	// 如果代理正在运行，需要重启以应用新的 backend
+	if a.isRunning() {
+		a.stopProxyInternal()
+		credsPath := filepath.Join(dir, "credentials.json")
+		if err := a.startProxyInternal(configPath, credsPath); err != nil {
+			return "", fmt.Errorf("重启代理失败: %v", err)
+		}
+		return fmt.Sprintf("已切换到 %s 模式并重启代理", backend), nil
+	}
+
+	return fmt.Sprintf("已切换到 %s 模式", backend), nil
 }

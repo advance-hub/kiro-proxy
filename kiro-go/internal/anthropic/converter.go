@@ -3,23 +3,29 @@ package anthropic
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
+
+	"kiro-go/internal/logger"
 
 	"github.com/google/uuid"
 )
 
 // MessagesRequest Anthropic /v1/messages 请求
 type MessagesRequest struct {
-	Model     string            `json:"model"`
-	MaxTokens int               `json:"max_tokens"`
-	Messages  []MessageItem     `json:"messages"`
-	System    json.RawMessage   `json:"system,omitempty"`
-	Stream    bool              `json:"stream"`
-	Tools     []json.RawMessage `json:"tools,omitempty"`
-	Metadata  *Metadata         `json:"metadata,omitempty"`
-	Thinking  *ThinkingConfig   `json:"thinking,omitempty"`
+	Model         string            `json:"model"`
+	MaxTokens     int               `json:"max_tokens"`
+	Messages      []MessageItem     `json:"messages"`
+	System        json.RawMessage   `json:"system,omitempty"`
+	Stream        bool              `json:"stream"`
+	Tools         []json.RawMessage `json:"tools,omitempty"`
+	Metadata      *Metadata         `json:"metadata,omitempty"`
+	Thinking      *ThinkingConfig   `json:"thinking,omitempty"`
+	Temperature   *float64          `json:"temperature,omitempty"`
+	TopP          *float64          `json:"top_p,omitempty"`
+	TopK          *int              `json:"top_k,omitempty"`
+	StopSequences []string          `json:"stop_sequences,omitempty"`
+	ToolChoice    json.RawMessage   `json:"tool_choice,omitempty"`
 }
 
 type MessageItem struct {
@@ -79,7 +85,13 @@ func ConvertToKiroRequest(req *MessagesRequest) ([]byte, error) {
 
 	// 消息规范化流水线（参考 kiro-gateway converters_core）
 	hasTools := len(req.Tools) > 0
+	for i, m := range req.Messages {
+		logger.Debugf(logger.CatProxy, "KIRO_PRE msg[%d] role=%s len=%d", i, m.Role, len(m.Content))
+	}
 	normalized := normalizeMessagePipeline(req.Messages, hasTools)
+	for i, m := range normalized {
+		logger.Debugf(logger.CatProxy, "KIRO_POST msg[%d] role=%s len=%d", i, m.Role, len(m.Content))
+	}
 
 	systemPrompt := extractSystemPrompt(req.System)
 	tools := convertTools(req.Tools)
@@ -138,7 +150,7 @@ func ConvertToKiroRequest(req *MessagesRequest) ([]byte, error) {
 			budgetTokens = 4000
 		}
 		textContent = injectThinkingTags(textContent, budgetTokens)
-		log.Printf("Injected fake reasoning tags (budget=%d)", budgetTokens)
+		logger.Debugf(logger.CatProxy, "注入fake reasoning标签 (budget=%d)", budgetTokens)
 	}
 
 	// 空内容兜底
@@ -165,12 +177,14 @@ func ConvertToKiroRequest(req *MessagesRequest) ([]byte, error) {
 
 	currentMessage := map[string]interface{}{"userInputMessage": userInput}
 
-	// conversationState：只包含 Kiro API 需要的字段
-	// 参考 kiro-gateway：不包含 agentContinuationId / agentTaskType
+	// conversationState：参考 kiro.rs converter.rs
+	agentContinuationID := uuid.New().String()
 	convState := map[string]interface{}{
-		"chatTriggerType": "MANUAL",
-		"conversationId":  conversationID,
-		"currentMessage":  currentMessage,
+		"agentContinuationId": agentContinuationID,
+		"agentTaskType":       "vibe",
+		"chatTriggerType":     "MANUAL",
+		"conversationId":      conversationID,
+		"currentMessage":      currentMessage,
 	}
 	// 只在有历史消息时才包含 history（Kiro API 不接受 null）
 	if len(history) > 0 {
@@ -185,8 +199,7 @@ func ConvertToKiroRequest(req *MessagesRequest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Kiro request: model=%s convId=%s historyLen=%d toolsLen=%d bodyLen=%d",
-		modelID, conversationID, len(history), len(tools), len(body))
+	logger.Debugf(logger.CatProxy, "Kiro请求体: %s", logger.TruncateBody(string(body), 500))
 	return body, nil
 }
 
@@ -621,7 +634,7 @@ func stripAllToolContent(messages []MessageItem) ([]MessageItem, bool) {
 	}
 
 	if hadToolContent {
-		log.Printf("[INFO] Stripped tool content from messages (no tools defined)")
+		logger.Debugf(logger.CatProxy, "移除tool内容(无tools定义)")
 	}
 
 	return result, hadToolContent
@@ -656,10 +669,10 @@ func ensureAssistantBeforeToolResults(messages []MessageItem) []MessageItem {
 		}
 
 		if !hasPrecedingAssistant {
-			// Orphaned tool_results：转换为文本
-			log.Printf("[WARN] Converting %d orphaned tool_results to text (no preceding assistant with tool_calls)", len(toolResults))
+			// Orphaned tool_results：转换为文本（与 Python kiro-gateway tool_results_to_text 一致）
+			// 完整保留内容，不截断
+			logger.Debugf(logger.CatProxy, "转换 %d 个孤立tool_results为文本", len(toolResults))
 
-			// 提取 tool_results 的文本表示
 			var toolTexts []string
 			for _, tr := range toolResults {
 				toolUseID, _ := tr["toolUseId"].(string)
@@ -668,14 +681,15 @@ func ensureAssistantBeforeToolResults(messages []MessageItem) []MessageItem {
 				if len(content) > 0 {
 					text, _ = content[0]["text"].(string)
 				}
-				toolTexts = append(toolTexts, fmt.Sprintf("Tool result (ID: %s):\n%s", toolUseID, text))
+				if text == "" {
+					text = "(empty result)"
+				}
+				logger.Debugf(logger.CatProxy, "孤立tool_result id=%s textLen=%d", toolUseID, len(text))
+				toolTexts = append(toolTexts, fmt.Sprintf("[Tool Result (%s)]\n%s", toolUseID, text))
 			}
 			toolResultsText := strings.Join(toolTexts, "\n\n")
 
-			// 提取原始文本内容
 			originalText := extractTextContent(msg.Content)
-
-			// 合并文本
 			var newContent string
 			if originalText != "" && toolResultsText != "" {
 				newContent = originalText + "\n\n" + toolResultsText
@@ -685,12 +699,14 @@ func ensureAssistantBeforeToolResults(messages []MessageItem) []MessageItem {
 				newContent = originalText
 			}
 
-			// 创建新消息（只保留文本，移除 tool_results）
-			newMsg := MessageItem{
-				Role:    msg.Role,
-				Content: json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, strconv.Quote(newContent))),
+			if newContent != "" {
+				newMsg := MessageItem{
+					Role:    msg.Role,
+					Content: json.RawMessage(fmt.Sprintf(`[{"type":"text","text":%s}]`, strconv.Quote(newContent))),
+				}
+				result = append(result, newMsg)
+				logger.Debugf(logger.CatProxy, "合并孤立消息 role=%s newContentLen=%d", newMsg.Role, len(newContent))
 			}
-			result = append(result, newMsg)
 			continue
 		}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,9 +11,18 @@ import (
 	"sync"
 )
 
-const ActivationServer = "http://117.72.183.248:7777"
-
 // ── Data Types ──
+
+// getActivationServerURL 获取激活服务器地址（优先使用本地 kiro-go，回退到远程 7777）
+func getActivationServerURL() string {
+	// 优先使用本地 kiro-go (13000端口)，避免与远程 7777 数据串扰
+	cfg, err := (&App{}).GetConfig()
+	if err == nil && cfg.Host != "" && cfg.Port > 0 {
+		return fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port)
+	}
+	// 回退到默认本地地址
+	return "http://127.0.0.1:13000"
+}
 
 type ActivationData struct {
 	Code      string `json:"code"`
@@ -151,4 +161,54 @@ func derefStr(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// SaveClaudeCodeConfig 保存 Claude Code 配置到 config.json
+func (a *App) SaveClaudeCodeConfig(apiKey, baseUrl string) error {
+	// 获取 kiro-go 配置文件路径
+	var configPath string
+	if runtime.GOOS == "darwin" {
+		home, _ := os.UserHomeDir()
+		configPath = filepath.Join(home, ".kiro-proxy", "config.json")
+	} else {
+		configPath = "/opt/kiro-proxy/config.json"
+	}
+
+	// 确保目录存在
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %v", err)
+	}
+
+	// 读取现有配置
+	data, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	var config map[string]interface{}
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("解析配置文件失败: %v", err)
+		}
+	} else {
+		config = make(map[string]interface{})
+	}
+
+	// 更新 Claude Code 配置
+	config["claudeCodeApiKey"] = apiKey
+	config["claudeCodeBaseUrl"] = baseUrl
+
+	// 写回文件
+	newData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化配置失败: %v", err)
+	}
+
+	if err := os.WriteFile(configPath, newData, 0644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %v", err)
+	}
+
+	logInfo(fmt.Sprintf("Claude Code 配置已保存: baseUrl=%s", baseUrl))
+	return nil
 }

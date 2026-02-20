@@ -2,15 +2,16 @@ import React, { useState, useEffect } from "react";
 import { Button, Typography, Toast } from "@douyinfe/semi-ui";
 import { IconPlay, IconKey, IconSetting, IconLink, IconMoon, IconSun, IconHelpCircle, IconEdit } from "@douyinfe/semi-icons";
 
-import ProxyPanel from "./components/ProxyPanel";
-import AccountManager from "./components/AccountManager/index";
-import SettingsPanel from "./components/SettingsPanel";
-import OpenCodePanel from "./components/OpenCodePanel";
-import ClaudeCodePanel from "./components/ClaudeCodePanel";
-import TunnelPanel from "./components/TunnelPanel";
-// import PromptPanel from "./components/PromptPanel";
-import AboutPanel from "./components/AboutPanel";
-import LogsPanel from "./components/LogsPanel";
+import ProxyPanel from "./components/shared/ProxyPanel";
+import AccountManager from "./components/kiro/AccountManager";
+import WarpPanel from "./components/warp/WarpPanel";
+import CodexPanel from "./components/codex/CodexPanel";
+import ClaudeCodePanel from "./components/clients/ClaudeCodePanel";
+import SettingsPanel from "./components/clients/SettingsPanel";
+import OpenCodePanel from "./components/clients/OpenCodePanel";
+import TunnelPanel from "./components/shared/TunnelPanel";
+import AboutPanel from "./components/shared/AboutPanel";
+import LogsPanel from "./components/shared/LogsPanel";
 
 const { Text } = Typography;
 
@@ -83,16 +84,34 @@ function ActivationGate({ onActivated }: { onActivated: () => void }) {
 function MainApp() {
   const { dark, toggle } = useTheme();
   const [activeTab, setActiveTab] = useState("proxy");
+  const [configSubTab, setConfigSubTab] = useState("kiro");
   const [clientSubTab, setClientSubTab] = useState("droid");
+  const [backend, setBackend] = useState("kiro");
 
+  useEffect(() => {
+    wails().GetBackend().then((b: string) => setBackend(b || "kiro")).catch(() => {});
+  }, []);
+
+  const handleNavigate = (tab: string, subTab?: string) => {
+    setActiveTab(tab);
+    if (tab === "config" && subTab) setConfigSubTab(subTab);
+  };
+
+  // 侧边栏菜单
   const mainMenu = [
     { key: "proxy", label: "代理服务", icon: <IconPlay /> },
-    { key: "accounts", label: "账号管理", icon: <IconKey /> },
+    { key: "config", label: "配置", icon: <IconKey /> },
     { key: "clients", label: "客户端配置", icon: <IconSetting /> },
-    // { key: "prompts", label: "提示词模板", icon: <IconEdit /> },
     { key: "tunnel", label: "内网穿透", icon: <IconLink /> },
     { key: "logs", label: "日志中心", icon: <IconEdit /> },
     { key: "about", label: "关于", icon: <IconHelpCircle /> },
+  ];
+
+  const configTabs = [
+    { key: "kiro", label: "Kiro" },
+    { key: "warp", label: "Warp" },
+    { key: "codex", label: "Codex" },
+    { key: "claudecode", label: "Claude Code" },
   ];
 
   const clientTabs = [
@@ -104,9 +123,9 @@ function MainApp() {
   const borderColor = dark ? "#333" : "#e8e8e8";
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: dark ? "#1a1a1a" : "#f5f5f5", transition: "background 0.3s" }}>
-      {/* 侧边栏 */}
-      <div style={{ width: 200, background: dark ? "#242424" : "#fff", borderRight: `1px solid ${borderColor}`, display: "flex", flexDirection: "column", transition: "background 0.3s, border-color 0.3s" }}>
+    <div style={{ display: "flex", height: "100vh", background: dark ? "#1a1a1a" : "#f5f5f5", transition: "background 0.3s", overflow: "hidden" }}>
+      {/* 侧边栏 - fixed */}
+      <div style={{ width: 200, height: "100vh", position: "fixed", left: 0, top: 0, background: dark ? "#242424" : "#fff", borderRight: `1px solid ${borderColor}`, display: "flex", flexDirection: "column", transition: "background 0.3s, border-color 0.3s", zIndex: 10 }}>
         <div style={{ padding: "20px 16px", borderBottom: `1px solid ${borderColor}`, display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #3370ff, #5b8def)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 16 }}>K</div>
           <Text strong style={{ fontSize: 15 }}>Kiro Launcher</Text>
@@ -137,10 +156,33 @@ function MainApp() {
         </div>
       </div>
 
-      {/* 主内容区 */}
-      <div style={{ flex: 1, overflow: "auto" }}>
-        {activeTab === "proxy" && <ProxyPanel />}
-        {activeTab === "accounts" && <AccountManager />}
+      {/* 主内容区 - 独立滚动 */}
+      <div style={{ flex: 1, marginLeft: 200, height: "100vh", overflow: "auto" }}>
+        {activeTab === "proxy" && <ProxyPanel onNavigate={handleNavigate} />}
+        {activeTab === "config" && (
+          <div>
+            <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${borderColor}`, background: dark ? "#242424" : "#fff", padding: "0 24px" }}>
+              {configTabs.map((tab) => (
+                <div
+                  key={tab.key}
+                  onClick={() => setConfigSubTab(tab.key)}
+                  style={{
+                    padding: "12px 20px", cursor: "pointer", fontSize: 13, fontWeight: configSubTab === tab.key ? 600 : 400,
+                    color: configSubTab === tab.key ? "#3370ff" : (dark ? "#aaa" : "#666"),
+                    borderBottom: configSubTab === tab.key ? "2px solid #3370ff" : "2px solid transparent",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {tab.label}
+                </div>
+              ))}
+            </div>
+            {configSubTab === "kiro" && <AccountManager />}
+            {configSubTab === "warp" && <WarpPanel />}
+            {configSubTab === "codex" && <CodexPanel />}
+            {configSubTab === "claudecode" && <ClaudeCodePanel />}
+          </div>
+        )}
         {activeTab === "clients" && (
           <div>
             <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${borderColor}`, background: dark ? "#242424" : "#fff", padding: "0 24px" }}>
@@ -164,7 +206,6 @@ function MainApp() {
             {clientSubTab === "claudecode" && <ClaudeCodePanel />}
           </div>
         )}
-        {/* {activeTab === "prompts" && <PromptPanel />} */}
         {activeTab === "tunnel" && <TunnelPanel />}
         {activeTab === "logs" && <LogsPanel />}
         {activeTab === "about" && <AboutPanel />}

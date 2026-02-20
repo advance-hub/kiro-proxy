@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"kiro-go/internal/logger"
 	"kiro-go/internal/model"
 )
 
@@ -26,6 +26,8 @@ func NewTokenManager(cfg *model.Config, creds []*model.KiroCredentials) *TokenMa
 }
 
 // AcquireContext 获取一个可用的凭据和 token
+// 不在请求路径上刷新 token，直接使用现有 token（即使过期，Kiro API 仍可接受）
+// Token 刷新由 kiro-launcher 负责，通过 /api/admin/reload-credentials 热加载
 func (tm *TokenManager) AcquireContext() (*model.KiroCredentials, string, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
@@ -34,32 +36,33 @@ func (tm *TokenManager) AcquireContext() (*model.KiroCredentials, string, error)
 		return nil, "", fmt.Errorf("没有可用的凭据")
 	}
 
+	// 优先选未过期且未禁用的凭据
+	for i := 0; i < len(tm.Credentials); i++ {
+		idx := (tm.current + i) % len(tm.Credentials)
+		cred := tm.Credentials[idx]
+		if cred.Disabled || cred.AccessToken == "" {
+			continue
+		}
+		if !IsTokenExpired(cred) {
+			tm.current = (idx + 1) % len(tm.Credentials)
+			return cred, cred.AccessToken, nil
+		}
+	}
+
+	// 没有未过期的，直接用第一个有 accessToken 的凭据（不刷新，不阻塞）
 	for i := 0; i < len(tm.Credentials); i++ {
 		idx := (tm.current + i) % len(tm.Credentials)
 		cred := tm.Credentials[idx]
 		if cred.Disabled {
 			continue
 		}
-
-		if IsTokenExpired(cred) || IsTokenExpiringSoon(cred) {
-			refreshed, err := RefreshToken(cred, tm.Config)
-			if err != nil {
-				log.Printf("凭据 #%d Token 刷新失败: %v", idx+1, err)
-				continue
-			}
-			tm.Credentials[idx] = refreshed
-			cred = refreshed
+		if cred.AccessToken != "" {
+			tm.current = (idx + 1) % len(tm.Credentials)
+			return cred, cred.AccessToken, nil
 		}
-
-		if cred.AccessToken == "" {
-			continue
-		}
-
-		tm.current = (idx + 1) % len(tm.Credentials)
-		return cred, cred.AccessToken, nil
 	}
 
-	return nil, "", fmt.Errorf("所有凭据均无法获取有效 Token（可用: 0/%d）", len(tm.Credentials))
+	return nil, "", fmt.Errorf("所有凭据均无可用 AccessToken（共 %d 个）", len(tm.Credentials))
 }
 
 func IsTokenExpired(cred *model.KiroCredentials) bool {
@@ -108,7 +111,7 @@ func RefreshToken(cred *model.KiroCredentials, cfg *model.Config) (*model.KiroCr
 }
 
 func refreshSocialToken(cred *model.KiroCredentials, cfg *model.Config) (*model.KiroCredentials, error) {
-	log.Printf("正在刷新 Social Token...")
+	logger.Infof(logger.CatToken, "正在刷新 Social Token...")
 
 	region := cred.EffectiveAuthRegion(cfg)
 	refreshURL := fmt.Sprintf("https://prod.%s.auth.desktop.kiro.dev/refreshToken", region)
@@ -125,7 +128,7 @@ func refreshSocialToken(cred *model.KiroCredentials, cfg *model.Config) (*model.
 	req.Header.Set("Host", refreshDomain)
 	req.Header.Set("Connection", "close")
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("刷新请求失败: %v", err)
@@ -168,12 +171,12 @@ func refreshSocialToken(cred *model.KiroCredentials, cfg *model.Config) (*model.
 		newCred.ExpiresAt = time.Now().Add(time.Duration(*data.ExpiresIn) * time.Second).Format(time.RFC3339)
 	}
 
-	log.Printf("Social Token 刷新成功，有效期至 %s", newCred.ExpiresAt)
+	logger.Infof(logger.CatToken, "Social Token 刷新成功，有效期至 %s", newCred.ExpiresAt)
 	return &newCred, nil
 }
 
 func refreshIdcToken(cred *model.KiroCredentials, cfg *model.Config) (*model.KiroCredentials, error) {
-	log.Printf("正在刷新 IdC Token...")
+	logger.Infof(logger.CatToken, "正在刷新 IdC Token...")
 
 	region := cred.EffectiveAuthRegion(cfg)
 	refreshURL := fmt.Sprintf("https://oidc.%s.amazonaws.com/token", region)
@@ -192,7 +195,7 @@ func refreshIdcToken(cred *model.KiroCredentials, cfg *model.Config) (*model.Kir
 	req.Header.Set("x-amz-user-agent", "aws-sdk-js/3.738.0 ua/2.1 os/other lang/js md/browser#unknown_unknown api/sso-oidc#3.738.0 m/E KiroIDE")
 	req.Header.Set("User-Agent", "node")
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("IdC 刷新请求失败: %v", err)
@@ -222,6 +225,6 @@ func refreshIdcToken(cred *model.KiroCredentials, cfg *model.Config) (*model.Kir
 		newCred.ExpiresAt = time.Now().Add(time.Duration(data.ExpiresIn) * time.Second).Format(time.RFC3339)
 	}
 
-	log.Printf("IdC Token 刷新成功，有效期至 %s", newCred.ExpiresAt)
+	logger.Infof(logger.CatToken, "IdC Token 刷新成功，有效期至 %s", newCred.ExpiresAt)
 	return &newCred, nil
 }
