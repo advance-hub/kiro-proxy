@@ -31,8 +31,9 @@ usage() {
     echo "  mac-x64      Build for macOS x86_64 only"
     echo "  win          Build for Windows x86_64"
     echo "  linux        Build kiro-go for Linux amd64 (server deployment)"
+    echo "  linux-gui    Build kiro-launcher GUI for Linux (requires remote server)"
     echo "  server       Build kiro-go for Linux + deploy to server"
-    echo "  all          Build for all platforms (mac-arm64 + mac-x64 + win + linux)"
+    echo "  all          Build for all platforms (mac-arm64 + mac-x64 + win + linux + linux-gui)"
     echo "  clean        Clean build artifacts"
     echo ""
     echo "If no target is specified, builds for current platform."
@@ -231,6 +232,64 @@ build_linux() {
     info "Linux server binary: $out_dir/kiro-go"
 }
 
+# ── Linux GUI (remote build on server) ──
+build_linux_gui() {
+    local server="${DEPLOY_SERVER:-root@117.72.183.248}"
+    local remote_dir="/opt/kiro-proxy-src"
+    local remote_path="$PATH:/usr/local/go/bin:/root/go/bin"
+
+    info "Building Linux GUI via remote server ($server)..."
+
+    # 1. 本地编译前端
+    info "[1/5] Building frontend locally..."
+    (cd "$WAILS_DIR/frontend" && pnpm install && pnpm run build)
+
+    # 2. 打包源码（排除不需要的目录）
+    info "[2/5] Packaging source code..."
+    local src_tar="/tmp/kiro-proxy-src.tar.gz"
+    (cd "$SCRIPT_DIR" && tar czf "$src_tar" \
+        --exclude='.git' \
+        --exclude='node_modules' \
+        --exclude='release' \
+        --exclude='build' \
+        --exclude='杂' \
+        kiro-go kiro-launcher build.sh)
+    info "Source package: $(du -h "$src_tar" | cut -f1)"
+
+    # 3. 上传到服务器并解压
+    info "[3/5] Uploading to server..."
+    scp "$src_tar" "$server:/tmp/"
+    ssh "$server" "rm -rf $remote_dir && mkdir -p $remote_dir && tar xzf /tmp/kiro-proxy-src.tar.gz -C $remote_dir 2>/dev/null"
+
+    # 4. 服务器上编译
+    info "[4/5] Compiling on server..."
+    # 检查宝塔 Node 路径
+    local node_path
+    node_path=$(ssh "$server" "ls -d /www/server/nodejs/*/bin 2>/dev/null | tail -1" || true)
+    local extra_path=""
+    [ -n "$node_path" ] && extra_path="$node_path:"
+
+    ssh "$server" "export PATH=${extra_path}\$PATH:/usr/local/go/bin:/root/go/bin && \
+        export GOPROXY=https://goproxy.cn,direct && \
+        cd $remote_dir/kiro-go && go build -o /tmp/kiro-go-linux . && \
+        mkdir -p $remote_dir/kiro-launcher/sidecar && \
+        cp /tmp/kiro-go-linux $remote_dir/kiro-launcher/sidecar/kiro-go && \
+        mkdir -p $remote_dir/kiro-launcher/frontend/dist && \
+        cp -r $remote_dir/kiro-launcher/dist/* $remote_dir/kiro-launcher/frontend/dist/ && \
+        cd $remote_dir/kiro-launcher && \
+        wails build -clean -o kiro-launcher -s"
+
+    # 5. 取回产物
+    info "[5/5] Downloading build artifact..."
+    local out_dir="$OUTPUT_DIR/linux-gui"
+    mkdir -p "$out_dir"
+    scp "$server:$remote_dir/kiro-launcher/build/bin/kiro-launcher" "$out_dir/kiro-launcher"
+    chmod +x "$out_dir/kiro-launcher"
+
+    info "Linux GUI binary: $out_dir/kiro-launcher ($(du -h "$out_dir/kiro-launcher" | cut -f1))"
+    info "运行前需安装: sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37"
+}
+
 # ── Deploy to server ──
 deploy_server() {
     local server="${DEPLOY_SERVER:-root@117.72.183.248}"
@@ -262,8 +321,9 @@ for target in "$@"; do
         mac-x64)    build_mac_x64 ;;
         win)        build_win ;;
         linux)      build_linux ;;
+        linux-gui)  build_linux_gui ;;
         server)     deploy_server ;;
-        all)        build_mac_arm64; build_mac_x64; build_win; build_linux ;;
+        all)        build_mac_arm64; build_mac_x64; build_win; build_linux; build_linux_gui ;;
         clean)      clean ;;
         -h|--help)  usage; exit 0 ;;
         *)          error "Unknown target: $target. Run '$0 --help' for usage." ;;

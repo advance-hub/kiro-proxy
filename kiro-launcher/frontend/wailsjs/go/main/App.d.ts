@@ -86,8 +86,6 @@ export function OpenDataDir():Promise<string>;
 
 export function ReadClaudeCodeSettings():Promise<Record<string, any>>;
 
-export function RefreshAccountToken(arg1:string):Promise<main.Account>;
-
 export function ReadCredentialsRaw():Promise<string>;
 
 export function ReadDroidSettings():Promise<Record<string, any>>;
@@ -95,6 +93,8 @@ export function ReadDroidSettings():Promise<Record<string, any>>;
 export function ReadFactoryConfig():Promise<Record<string, any>>;
 
 export function ReadOpenCodeConfig():Promise<Record<string, any>>;
+
+export function RefreshAccountToken(arg1:string):Promise<main.Account>;
 
 export function RefreshNow():Promise<string>;
 
