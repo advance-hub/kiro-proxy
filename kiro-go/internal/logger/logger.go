@@ -50,8 +50,6 @@ const (
 	CatResponse Category = "RESPONSE"
 	CatCreds    Category = "CREDS"
 	CatAdmin    Category = "ADMIN"
-	CatWarp     Category = "WARP"
-	CatCodex    Category = "CODEX"
 	CatStream   Category = "STREAM"
 	CatHTTP     Category = "HTTP"
 )

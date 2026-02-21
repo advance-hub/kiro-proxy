@@ -122,14 +122,19 @@ func HandlePostMessages(w http.ResponseWriter, r *http.Request, provider *kiro.P
 		return
 	}
 
+	// 上下文压缩：消息过多时用小模型压缩历史
+	creds := common.GetCredsFromContext(r)
+	actCode := common.GetActCodeFromContext(r)
+	if compressed, ok := CompressContext(req.Messages, provider.Config, provider, creds, actCode); ok {
+		req.Messages = compressed
+	}
+
 	kiroBody, err := ConvertToKiroRequest(&req)
 	if err != nil {
 		common.WriteError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
 
-	creds := common.GetCredsFromContext(r)
-	actCode := common.GetActCodeFromContext(r)
 	var resp *http.Response
 	if creds != nil {
 		resp, err = provider.CallWithCredentials(kiroBody, creds, actCode)

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,14 +12,11 @@ import (
 	"time"
 
 	"kiro-go/internal/anthropic"
-	"kiro-go/internal/claudecode"
-	"kiro-go/internal/codex"
 	"kiro-go/internal/common"
 	"kiro-go/internal/kiro"
 	"kiro-go/internal/logger"
 	"kiro-go/internal/model"
 	"kiro-go/internal/openai"
-	"kiro-go/internal/warp"
 )
 
 func main() {
@@ -119,38 +115,6 @@ func main() {
 		logger.Infof(logger.CatSystem, "Anthropic 直连已启用 (%s)", cfg.AnthropicBaseURL)
 	}
 
-	// 默认后端（用于 ResolveBackend 无法识别模型时的 fallback）
-	defaultBackend := common.Backend(cfg.Backend)
-	if defaultBackend == "" {
-		defaultBackend = common.BackendKiro
-	}
-	logger.Infof(logger.CatSystem, "默认后端: %s (所有后端并行可用，按模型名自动路由)", defaultBackend)
-
-	// Warp provider
-	warpStore := warp.NewCredentialStore(cfg.WarpCredentialsPath)
-	if err := warpStore.Load(); err != nil {
-		logger.Warnf(logger.CatWarp, "加载 Warp 凭证失败: %v", err)
-	} else {
-		logger.Infof(logger.CatWarp, "Warp 凭证已加载: %d 个 (活跃: %d)", warpStore.Count(), warpStore.ActiveCount())
-	}
-	warpProvider := warp.NewProvider(warpStore)
-
-	// Codex provider
-	codexStore := codex.NewCredentialStore(cfg.CodexCredentialsPath)
-	if err := codexStore.Load(); err != nil {
-		logger.Warnf(logger.CatCodex, "加载 Codex 凭证失败: %v", err)
-	} else {
-		logger.Infof(logger.CatCodex, "Codex 凭证已加载: %d 个 (活跃: %d)", codexStore.Count(), codexStore.ActiveCount())
-	}
-	codexProvider := codex.NewProvider(codexStore)
-
-	// Claude Code provider (使用配置中的 Claude Code API Key 和 Base URL)
-	var claudeCodeProvider *claudecode.Provider
-	if cfg.ClaudeCodeAPIKey != "" && cfg.ClaudeCodeBaseURL != "" {
-		claudeCodeProvider = claudecode.NewProvider(cfg.ClaudeCodeBaseURL, cfg.ClaudeCodeAPIKey)
-		logger.Infof(logger.CatSystem, "Claude Code 代理已启用 (%s)", cfg.ClaudeCodeBaseURL)
-	}
-
 	// 路由
 	mux := http.NewServeMux()
 
@@ -171,70 +135,6 @@ func main() {
 		openai.HandleChatCompletions(w, r, provider)
 	}))
 
-	// ==================== /kiro/v1/ - Kiro 后端 ====================
-	mux.HandleFunc("/kiro/v1/models", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		anthropic.HandleGetModels(w, r, provider)
-	}))
-	mux.HandleFunc("/kiro/v1/messages", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		anthropic.HandlePostMessages(w, r, provider)
-	}))
-	mux.HandleFunc("/kiro/v1/chat/completions", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		openai.HandleChatCompletions(w, r, provider)
-	}))
-
-	// ==================== /warp/v1/ - Warp 后端 ====================
-	mux.HandleFunc("/warp/v1/models", func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpModels(w, r, warpProvider)
-	})
-	mux.HandleFunc("/warp/v1/messages", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpMessages(w, r, warpProvider)
-	}))
-	mux.HandleFunc("/warp/v1/chat/completions", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpChatCompletions(w, r, warpProvider)
-	}))
-	// Warp 凭证管理
-	mux.HandleFunc("/api/warp/credentials", func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpCredentials(w, r, warpStore)
-	})
-	mux.HandleFunc("/api/warp/credentials/batch-import", func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpCredentialsBatch(w, r, warpStore)
-	})
-	mux.HandleFunc("/api/warp/credentials/batch-import-apikey", func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpBatchImportApiKey(w, r, warpStore)
-	})
-	mux.HandleFunc("/api/warp/refresh-all", func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpRefreshAll(w, r, warpStore)
-	})
-	mux.HandleFunc("/api/warp/stats", func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpStats(w, r, warpStore)
-	})
-	mux.HandleFunc("/api/warp/quotas", func(w http.ResponseWriter, r *http.Request) {
-		warp.HandleWarpQuotas(w, r, warpStore)
-	})
-
-	// ==================== /codex/v1/ - Codex 后端 ====================
-	mux.HandleFunc("/codex/v1/models", func(w http.ResponseWriter, r *http.Request) {
-		codex.HandleCodexModels(w, r)
-	})
-	mux.HandleFunc("/codex/v1/messages", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		codex.HandleCodexMessages(w, r, codexProvider)
-	}))
-	mux.HandleFunc("/codex/v1/chat/completions", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		codex.HandleCodexChatCompletions(w, r, codexProvider)
-	}))
-	mux.HandleFunc("/api/codex/credentials", func(w http.ResponseWriter, r *http.Request) {
-		codex.HandleCodexCredentials(w, r, codexStore)
-	})
-	mux.HandleFunc("/api/codex/credentials/batch-import", func(w http.ResponseWriter, r *http.Request) {
-		codex.HandleCodexCredentialsBatch(w, r, codexStore)
-	})
-	mux.HandleFunc("/api/codex/refresh-all", func(w http.ResponseWriter, r *http.Request) {
-		codex.HandleCodexRefreshAll(w, r, codexStore)
-	})
-	mux.HandleFunc("/api/codex/stats", func(w http.ResponseWriter, r *http.Request) {
-		codex.HandleCodexStats(w, r, codexStore)
-	})
-
 	// ==================== /anthropic/v1/ - Anthropic 直连后端 ====================
 	mux.HandleFunc("/anthropic/v1/models", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
 		anthropic.HandleGetModels(w, r, provider)
@@ -251,29 +151,6 @@ func main() {
 			openai.HandleChatCompletionsDirect(w, r, directProvider)
 		} else {
 			common.WriteError(w, http.StatusServiceUnavailable, "api_error", "Anthropic 直连未配置 (需要 anthropicApiKey)")
-		}
-	}))
-
-	// ==================== /claudecode/v1/ - Claude Code 反向代理 ====================
-	mux.HandleFunc("/claudecode/v1/models", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		if claudeCodeProvider != nil {
-			claudecode.HandleClaudeCodeModels(w, r, claudeCodeProvider)
-		} else {
-			common.WriteError(w, http.StatusServiceUnavailable, "api_error", "Claude Code 未配置 (需要 claudeCodeApiKey 和 claudeCodeBaseUrl)")
-		}
-	}))
-	mux.HandleFunc("/claudecode/v1/messages", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		if claudeCodeProvider != nil {
-			claudecode.HandleClaudeCodeMessages(w, r, claudeCodeProvider)
-		} else {
-			common.WriteError(w, http.StatusServiceUnavailable, "api_error", "Claude Code 未配置 (需要 claudeCodeApiKey 和 claudeCodeBaseUrl)")
-		}
-	}))
-	mux.HandleFunc("/claudecode/v1/chat/completions", authMw.Wrap(func(w http.ResponseWriter, r *http.Request) {
-		if claudeCodeProvider != nil {
-			claudecode.HandleClaudeCodeChatCompletions(w, r, claudeCodeProvider)
-		} else {
-			common.WriteError(w, http.StatusServiceUnavailable, "api_error", "Claude Code 未配置 (需要 claudeCodeApiKey 和 claudeCodeBaseUrl)")
 		}
 	}))
 
@@ -453,7 +330,7 @@ func main() {
 		"api_key": logger.MaskKey(cfg.APIKey),
 		"backend": cfg.Backend,
 	})
-	logger.Infof(logger.CatSystem, "路由: /v1/ (统一) | /kiro/v1/ | /warp/v1/ | /codex/v1/ | /anthropic/v1/ | /admin")
+	logger.Infof(logger.CatSystem, "路由: /v1/ (Kiro) | /anthropic/v1/ (直连) | /admin")
 
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		logger.Fatalf(logger.CatSystem, "服务器启动失败: %v", err)
@@ -533,74 +410,6 @@ func handleAddUserCredential(w http.ResponseWriter, r *http.Request, cm *kiro.Co
 	common.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true, "message": fmt.Sprintf("凭证已保存: %s", payload.ActivationCode),
 	})
-}
-
-// handleUnifiedModels 合并所有后端的模型列表
-func handleUnifiedModels(w http.ResponseWriter, r *http.Request) {
-	var allModels []map[string]interface{}
-
-	// Kiro/Anthropic 模型
-	kiroModels := []map[string]interface{}{
-		{"id": "claude-sonnet-4-5-20250929", "object": "model", "created": 1727568000, "owned_by": "anthropic", "display_name": "Claude Sonnet 4.5", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-sonnet-4-5-20250929-thinking", "object": "model", "created": 1727568000, "owned_by": "anthropic", "display_name": "Claude Sonnet 4.5 (Thinking)", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-opus-4-5-20251101", "object": "model", "created": 1730419200, "owned_by": "anthropic", "display_name": "Claude Opus 4.5", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-opus-4-5-20251101-thinking", "object": "model", "created": 1730419200, "owned_by": "anthropic", "display_name": "Claude Opus 4.5 (Thinking)", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-opus-4-6", "object": "model", "created": 1770314400, "owned_by": "anthropic", "display_name": "Claude Opus 4.6", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-opus-4-6-thinking", "object": "model", "created": 1770314400, "owned_by": "anthropic", "display_name": "Claude Opus 4.6 (Thinking)", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-haiku-4-5-20251001", "object": "model", "created": 1727740800, "owned_by": "anthropic", "display_name": "Claude Haiku 4.5", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-haiku-4-5-20251001-thinking", "object": "model", "created": 1727740800, "owned_by": "anthropic", "display_name": "Claude Haiku 4.5 (Thinking)", "type": "chat", "max_tokens": 32000},
-	}
-	allModels = append(allModels, kiroModels...)
-
-	// Warp 模型
-	warpModels := []map[string]interface{}{
-		{"id": "claude-4.1-opus", "object": "model", "owned_by": "warp", "display_name": "Claude 4.1 Opus", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-4-opus", "object": "model", "owned_by": "warp", "display_name": "Claude 4 Opus", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-4-5-opus", "object": "model", "owned_by": "warp", "display_name": "Claude 4.5 Opus", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-4-sonnet", "object": "model", "owned_by": "warp", "display_name": "Claude 4 Sonnet", "type": "chat", "max_tokens": 32000},
-		{"id": "claude-4-5-sonnet", "object": "model", "owned_by": "warp", "display_name": "Claude 4.5 Sonnet", "type": "chat", "max_tokens": 32000},
-		{"id": "gpt-5", "object": "model", "owned_by": "warp", "display_name": "GPT-5", "type": "chat", "max_tokens": 32000},
-		{"id": "gpt-4.1", "object": "model", "owned_by": "warp", "display_name": "GPT-4.1", "type": "chat", "max_tokens": 32000},
-		{"id": "o3", "object": "model", "owned_by": "warp", "display_name": "O3", "type": "chat", "max_tokens": 32000},
-		{"id": "o4-mini", "object": "model", "owned_by": "warp", "display_name": "O4 Mini", "type": "chat", "max_tokens": 32000},
-		{"id": "gemini-2.5-pro", "object": "model", "owned_by": "warp", "display_name": "Gemini 2.5 Pro", "type": "chat", "max_tokens": 32000},
-	}
-	allModels = append(allModels, warpModels...)
-
-	// Codex 模型
-	codexModels := []map[string]interface{}{
-		{"id": "gpt-5-codex", "object": "model", "owned_by": "codex", "display_name": "GPT-5 Codex", "type": "chat", "max_tokens": 32000},
-		{"id": "gpt-5-codex-mini", "object": "model", "owned_by": "codex", "display_name": "GPT-5 Codex Mini", "type": "chat", "max_tokens": 32000},
-		{"id": "gpt-5-codex-max", "object": "model", "owned_by": "codex", "display_name": "GPT-5 Codex Max", "type": "chat", "max_tokens": 32000},
-		{"id": "gpt-5.1-codex", "object": "model", "owned_by": "codex", "display_name": "GPT-5.1 Codex", "type": "chat", "max_tokens": 32000},
-	}
-	allModels = append(allModels, codexModels...)
-
-	common.WriteJSON(w, http.StatusOK, map[string]interface{}{"object": "list", "data": allModels})
-}
-
-// extractModelFromRequest 从请求体中提取模型名（不消耗 body）
-func extractModelFromRequest(r *http.Request) string {
-	// 先尝试从 query 参数获取
-	if m := r.URL.Query().Get("model"); m != "" {
-		return m
-	}
-	// 从 body 中 peek 模型名（需要读取后放回）
-	if r.Body == nil {
-		return ""
-	}
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		return ""
-	}
-	// 放回 body 供后续 handler 使用
-	r.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
-
-	var partial struct {
-		Model string `json:"model"`
-	}
-	json.Unmarshal(bodyBytes, &partial)
-	return partial.Model
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

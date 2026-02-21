@@ -39,6 +39,7 @@ declare global {
           AddAccountBySocial(refreshToken: string, provider: string): Promise<any>;
           AddAccountByIdC(refreshToken: string, clientId: string, clientSecret: string, region: string): Promise<any>;
           SyncAccount(id: string): Promise<any>;
+          RefreshAccountToken(id: string): Promise<any>;
           SwitchAccount(id: string): Promise<string>;
           ImportLocalAccount(): Promise<any>;
           UpdateAccountLabel(id: string, label: string): Promise<any>;
@@ -64,9 +65,6 @@ declare global {
           StopTunnel(): Promise<string>;
           SetExternalTunnel(url: string): Promise<string>;
           ClearExternalTunnel(): Promise<string>;
-          // Backend Mode
-          GetBackend(): Promise<string>;
-          SetBackend(backend: string): Promise<string>;
         };
       };
     };

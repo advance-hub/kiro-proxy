@@ -4,8 +4,6 @@ import { IconPlay, IconKey, IconSetting, IconLink, IconMoon, IconSun, IconHelpCi
 
 import ProxyPanel from "./components/shared/ProxyPanel";
 import AccountManager from "./components/kiro/AccountManager";
-import WarpPanel from "./components/warp/WarpPanel";
-import CodexPanel from "./components/codex/CodexPanel";
 import ClaudeCodePanel from "./components/clients/ClaudeCodePanel";
 import SettingsPanel from "./components/clients/SettingsPanel";
 import OpenCodePanel from "./components/clients/OpenCodePanel";
@@ -86,11 +84,6 @@ function MainApp() {
   const [activeTab, setActiveTab] = useState("proxy");
   const [configSubTab, setConfigSubTab] = useState("kiro");
   const [clientSubTab, setClientSubTab] = useState("droid");
-  const [backend, setBackend] = useState("kiro");
-
-  useEffect(() => {
-    wails().GetBackend().then((b: string) => setBackend(b || "kiro")).catch(() => {});
-  }, []);
 
   const handleNavigate = (tab: string, subTab?: string) => {
     setActiveTab(tab);
@@ -109,9 +102,6 @@ function MainApp() {
 
   const configTabs = [
     { key: "kiro", label: "Kiro" },
-    { key: "warp", label: "Warp" },
-    { key: "codex", label: "Codex" },
-    { key: "claudecode", label: "Claude Code" },
   ];
 
   const clientTabs = [
@@ -178,9 +168,6 @@ function MainApp() {
               ))}
             </div>
             {configSubTab === "kiro" && <AccountManager />}
-            {configSubTab === "warp" && <WarpPanel />}
-            {configSubTab === "codex" && <CodexPanel />}
-            {configSubTab === "claudecode" && <ClaudeCodePanel />}
           </div>
         )}
         {activeTab === "clients" && (

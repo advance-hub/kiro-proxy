@@ -18,24 +18,16 @@ interface ProxyPanelProps {
 
 export default function ProxyPanel({ onNavigate }: ProxyPanelProps) {
   const [status, setStatus] = useState<StatusInfo | null>(null);
-  const [backend, setBackend] = useState("kiro");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState("");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ kiro: true, warp: true, codex: true, claudecode: true });
-  // 各后端凭证统计
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ kiro: true });
+  // 凭证统计
   const [kiroCount, setKiroCount] = useState(0);
-  const [warpStats, setWarpStats] = useState<{ total: number; active: number } | null>(null);
-  const [codexStats, setCodexStats] = useState<{ total: number; active: number } | null>(null);
-  const [claudeCodeReady, setClaudeCodeReady] = useState(false);
-  // 各后端模型数据
+  // 模型数据
   const [kiroModels, setKiroModels] = useState<any[]>([]);
-  const [warpModels, setWarpModels] = useState<any[]>([]);
-  const [codexModels, setCodexModels] = useState<any[]>([]);
-  const [claudeCodeModels, setClaudeCodeModels] = useState<any[]>([]);
 
   const refreshStatus = useCallback(async () => {
     try { const s = await wails().GetStatus() as StatusInfo; setStatus(s); } catch (_) {}
-    try { const b = await wails().GetBackend(); setBackend(b || "kiro"); } catch (_) {}
   }, []);
 
   const getBase = useCallback(() => {
@@ -53,15 +45,9 @@ export default function ProxyPanel({ onNavigate }: ProxyPanelProps) {
     
     // 获取凭证统计
     try { const r = await fetch(`${base}/api/admin/user-credentials/stats`, { headers }); if (r.ok) { const d = await r.json(); setKiroCount(d.total_users || 0); } } catch (_) {}
-    try { const r = await fetch(`${base}/api/warp/stats`, { headers }); if (r.ok) { const d = await r.json(); setWarpStats(d.data || null); } } catch (_) {}
-    try { const r = await fetch(`${base}/api/codex/stats`, { headers }); if (r.ok) { const d = await r.json(); setCodexStats(d.data || null); } } catch (_) {}
-    try { const r = await fetch(`${base}/claudecode/v1/models`, { headers: authHeaders }); setClaudeCodeReady(r.ok); } catch (_) { setClaudeCodeReady(false); }
     
     // 获取模型数据
-    try { const r = await fetch(`${base}/kiro/v1/models`, { headers: authHeaders }); if (r.ok) { const d = await r.json(); setKiroModels(d.data || []); } } catch (_) { setKiroModels([]); }
-    try { const r = await fetch(`${base}/warp/v1/models`, { headers: authHeaders }); if (r.ok) { const d = await r.json(); setWarpModels(d.data || []); } } catch (_) { setWarpModels([]); }
-    try { const r = await fetch(`${base}/codex/v1/models`, { headers: authHeaders }); if (r.ok) { const d = await r.json(); setCodexModels(d.data || []); } } catch (_) { setCodexModels([]); }
-    try { const r = await fetch(`${base}/claudecode/v1/models`, { headers: authHeaders }); if (r.ok) { const d = await r.json(); setClaudeCodeModels(d.data || []); } } catch (_) { setClaudeCodeModels([]); }
+    try { const r = await fetch(`${base}/v1/models`, { headers: authHeaders }); if (r.ok) { const d = await r.json(); setKiroModels(d.data || []); } } catch (_) { setKiroModels([]); }
   }, [getBase, getApiKey]);
 
   useEffect(() => { refreshStatus(); const t = setInterval(refreshStatus, 3000); return () => clearInterval(t); }, [refreshStatus]);
@@ -233,7 +219,7 @@ export default function ProxyPanel({ onNavigate }: ProxyPanelProps) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
           <Text strong style={{ fontSize: 18, display: "block" }}>代理服务</Text>
-          <Text type="tertiary" size="small">所有后端并行挂载，按模型名自动路由</Text>
+          <Text type="tertiary" size="small">Kiro 代理服务</Text>
         </div>
         <Space>
           {running && <Button size="small" theme="borderless" icon={<IconRefresh />} onClick={fetchBackendStats}>刷新状态</Button>}
@@ -261,7 +247,7 @@ export default function ProxyPanel({ onNavigate }: ProxyPanelProps) {
       {/* 统一端点 + 环境变量 */}
       <Card bodyStyle={{ padding: "14px 20px" }} style={{ marginBottom: 12, borderRadius: 10 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <Text strong size="small">统一端点（按模型名自动路由）</Text>
+          <Text strong size="small">API 端点</Text>
           <Tooltip content={copied === "env" ? "已复制" : "复制环境变量"}>
             <Button size="small" theme="borderless" icon={copied === "env" ? <IconTick style={{ color: "#52c41a" }} /> : <IconCopy />}
               onClick={() => copyText(`ANTHROPIC_BASE_URL=${baseUrl}\nANTHROPIC_API_KEY=${apiKey}`, "env")} />
@@ -274,18 +260,9 @@ ANTHROPIC_BASE_URL={baseUrl}{"\n"}ANTHROPIC_API_KEY={apiKey}
         </pre>
       </Card>
 
-      {/* 各后端折叠卡片 */}
-      {renderBackendCard("kiro", "Kiro", "AWS CodeWhisperer 后端", "blue", "/kiro/v1",
+      {/* Kiro 后端卡片 */}
+      {renderBackendCard("kiro", "Kiro", "AWS CodeWhisperer 后端", "blue", "/v1",
         kiroCount > 0 ? `${kiroCount} 个用户凭证` : "未配置凭证", kiroCount > 0, kiroModels)}
-
-      {renderBackendCard("warp", "Warp", "Cloudflare Warp 多模型代理", "purple", "/warp/v1",
-        warpStats ? `${warpStats.active}/${warpStats.total} 活跃` : "未配置凭证", !!(warpStats && warpStats.active > 0), warpModels)}
-
-      {renderBackendCard("codex", "Codex", "OpenAI Codex 后端", "green", "/codex/v1",
-        codexStats ? `${codexStats.active}/${codexStats.total} 活跃` : "未配置凭证", !!(codexStats && codexStats.active > 0), codexModels)}
-
-      {renderBackendCard("claudecode", "Claude Code", "Claude Code 反向代理", "orange", "/claudecode/v1",
-        claudeCodeReady ? "API Key 已配置" : "需要配置 API Key", claudeCodeReady, claudeCodeModels)}
     </div>
   );
 }

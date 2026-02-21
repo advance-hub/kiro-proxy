@@ -281,35 +281,3 @@ func (a *App) GetBackend() (string, error) {
 	}
 	return "kiro", nil
 }
-
-// SetBackend 切换后端模式 ("kiro" | "warp")
-func (a *App) SetBackend(backend string) (string, error) {
-	dir, err := getDataDir()
-	if err != nil {
-		return "", err
-	}
-	configPath := filepath.Join(dir, "config.json")
-
-	existing := make(map[string]interface{})
-	if data, err := os.ReadFile(configPath); err == nil {
-		json.Unmarshal(data, &existing)
-	}
-
-	existing["backend"] = backend
-	data, _ := json.MarshalIndent(existing, "", "  ")
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return "", fmt.Errorf("写入配置失败: %v", err)
-	}
-
-	// 如果代理正在运行，需要重启以应用新的 backend
-	if a.isRunning() {
-		a.stopProxyInternal()
-		credsPath := filepath.Join(dir, "credentials.json")
-		if err := a.startProxyInternal(configPath, credsPath); err != nil {
-			return "", fmt.Errorf("重启代理失败: %v", err)
-		}
-		return fmt.Sprintf("已切换到 %s 模式并重启代理", backend), nil
-	}
-
-	return fmt.Sprintf("已切换到 %s 模式", backend), nil
-}

@@ -223,6 +223,26 @@ export default function AccountDetailModal({ account, onClose }: Props) {
               </div>
             )}
           </div>
+
+          {/* 复制完整 JSON */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <Text strong>完整 JSON</Text>
+              <Button size="small" theme="light" icon={copied === "json" ? <IconTick style={{ color: "#00b365" }} /> : <IconCopy />} onClick={() => {
+                const json = JSON.stringify(account, null, 2);
+                handleCopy(json, "json");
+                Toast.success({ content: "JSON 已复制到剪贴板" });
+              }}>
+                {copied === "json" ? "已复制" : "复制 JSON"}
+              </Button>
+            </div>
+            <pre style={{
+              padding: 12, borderRadius: 8, background: "var(--semi-color-fill-0)",
+              fontFamily: "monospace", fontSize: 11, lineHeight: 1.5,
+              maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all",
+              margin: 0, border: "1px solid var(--semi-color-border)",
+            }}>{JSON.stringify(account, null, 2)}</pre>
+          </div>
         </div>
 
         {/* Footer */}

@@ -73,12 +73,8 @@ func (a *App) StartProxy() (string, error) {
 		return "", fmt.Errorf("配置文件不存在，请先保存配置")
 	}
 
-	// 只有非 warp 模式才要求 Kiro 凭据文件
-	backend, _ := a.GetBackend()
-	if backend != "warp" {
-		if _, err := os.Stat(credsPath); os.IsNotExist(err) {
-			return "", fmt.Errorf("凭据文件不存在，请先登录或获取凭据")
-		}
+	if _, err := os.Stat(credsPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("凭据文件不存在，请先登录或获取凭据")
 	}
 
 	if err := a.startProxyInternal(configPath, credsPath); err != nil {
@@ -232,9 +228,6 @@ func (a *App) OneClickStart() (string, error) {
 		return "", err
 	}
 
-	// 读取当前 backend 模式
-	backend, _ := a.GetBackend()
-
 	// 确保 config 存在
 	configPath := filepath.Join(dir, "config.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -245,27 +238,15 @@ func (a *App) OneClickStart() (string, error) {
 
 	credsPath := filepath.Join(dir, "credentials.json")
 
-	if backend == "warp" {
-		// ── Warp 模式：不需要 Kiro 凭据，直接启动 ──
-		// 确保 credentials.json 存在（kiro-go 启动需要，即使是空数组）
-		if _, err := os.Stat(credsPath); os.IsNotExist(err) {
-			os.WriteFile(credsPath, []byte("[]"), 0644)
-		}
-	} else {
-		// ── Kiro 模式：走原有的 keychain + token 刷新流程 ──
-		a.oneClickKiroSetup(dir, credsPath)
-	}
+	// Kiro 模式：走 keychain + token 刷新流程
+	a.oneClickKiroSetup(dir, credsPath)
 
 	cfg, _ := a.GetConfig()
 	if err := a.startProxyInternal(configPath, credsPath); err != nil {
 		return "", err
 	}
 
-	modeLabel := "Kiro"
-	if backend == "warp" {
-		modeLabel = "Warp"
-	}
-	return fmt.Sprintf("代理已启动 (%s 模式): http://%s:%d", modeLabel, cfg.Host, cfg.Port), nil
+	return fmt.Sprintf("代理已启动: http://%s:%d", cfg.Host, cfg.Port), nil
 }
 
 // oneClickKiroSetup Kiro 模式的凭证准备（keychain 读取 + token 刷新）

@@ -47,6 +47,12 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request, provider *kir
 
 	req := convertOpenAIToAnthropic(openaiReq)
 
+	// 上下文压缩：消息过多时用小模型压缩历史
+	creds := common.GetCredsFromContext(r)
+	if compressed, ok := anthropic.CompressContext(req.Messages, provider.Config, provider, creds, actCode); ok {
+		req.Messages = compressed
+	}
+
 	kiroBody, err := anthropic.ConvertToKiroRequest(req)
 	if err != nil {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
@@ -54,7 +60,6 @@ func HandleChatCompletions(w http.ResponseWriter, r *http.Request, provider *kir
 	}
 
 	start := time.Now()
-	creds := common.GetCredsFromContext(r)
 	var resp *http.Response
 	if creds != nil {
 		resp, err = provider.CallWithCredentials(kiroBody, creds, actCode)

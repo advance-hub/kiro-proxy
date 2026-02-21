@@ -44,17 +44,55 @@ export default function AccountManager() {
   const [currentPage, setCurrentPage] = useState(1);
   const [batchRefreshing, setBatchRefreshing] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState({ current: 0, total: 0 });
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const autoRefreshingRef = React.useRef(false);
+
+  const isExpiringSoon = useCallback((account: Account) => {
+    if (!account.expiresAt) return true;
+    const expiresAt = new Date(account.expiresAt.replace(/\//g, '-'));
+    return expiresAt.getTime() - Date.now() < 5 * 60 * 1000; // 5分钟内过期
+  }, []);
+
+  const autoRefreshExpired = useCallback(async (accountList: Account[]) => {
+    if (autoRefreshingRef.current || accountList.length === 0) return;
+    const expiring = accountList.filter(a => isExpiringSoon(a) && a.status !== "已封禁" && a.status !== "Token已失效");
+    if (expiring.length === 0) return;
+
+    autoRefreshingRef.current = true;
+    setAutoRefreshing(true);
+    const updated = [...accountList];
+
+    for (let i = 0; i < expiring.length; i++) {
+      try {
+        const refreshed = await wails().RefreshAccountToken(expiring[i].id);
+        const idx = updated.findIndex(a => a.id === expiring[i].id);
+        if (idx !== -1) updated[idx] = refreshed;
+      } catch (_) { /* 静默失败 */ }
+      if (i < expiring.length - 1) await new Promise(r => setTimeout(r, 500));
+    }
+
+    setAccounts(updated);
+    autoRefreshingRef.current = false;
+    setAutoRefreshing(false);
+  }, [isExpiringSoon]);
 
   const loadAccounts = useCallback(async () => {
     try {
       const list = await wails().GetAccounts();
       setAccounts(list || []);
-    } catch (e) { Toast.error({ content: `获取账号列表失败: ${e}` }); }
+      return list || [];
+    } catch (e) { Toast.error({ content: `获取账号列表失败: ${e}` }); return []; }
   }, []);
 
   useEffect(() => { 
-    loadAccounts(); 
-  }, [loadAccounts]);
+    loadAccounts().then(list => { if (list.length > 0) autoRefreshExpired(list); });
+    const interval = setInterval(async () => {
+      if (document.hidden) return;
+      const list = await loadAccounts();
+      if (list.length > 0) autoRefreshExpired(list);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [loadAccounts, autoRefreshExpired]);
 
   const filteredAccounts = useMemo(() =>
     accounts.filter(a => a.email.toLowerCase().includes(searchTerm.toLowerCase()) || (a.label || "").toLowerCase().includes(searchTerm.toLowerCase())),

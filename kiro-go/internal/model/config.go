@@ -29,22 +29,17 @@ type Config struct {
 	// 激活码验证服务地址（app.js，如 http://127.0.0.1:7777）
 	ActivationServerURL string `json:"activationServerUrl"`
 
-	// Backend 选择: "kiro" (默认) | "anthropic" | "warp" | "codex"
+	// 上下文压缩配置
+	ContextCompression    bool   `json:"contextCompression"`    // 是否启用上下文压缩（默认 false）
+	CompressionModel      string `json:"compressionModel"`      // 压缩用的模型（默认 claude-haiku-4.5）
+	CompressionThreshold  int    `json:"compressionThreshold"`  // 消息数阈值，超过则触发压缩（默认 8）
+	CompressionKeepRecent int    `json:"compressionKeepRecent"` // 保留最近几条消息不压缩（默认 6）
+
+	// Backend 选择: "kiro" (默认) | "anthropic"
 	Backend          string   `json:"backend"`
 	AnthropicAPIKey  string   `json:"anthropicApiKey"`
 	AnthropicAPIKeys []string `json:"anthropicApiKeys"`
 	AnthropicBaseURL string   `json:"anthropicBaseUrl"`
-
-	// Warp 模式配置
-	WarpEnabled         bool   `json:"warpEnabled"`
-	WarpCredentialsPath string `json:"warpCredentialsPath"`
-
-	// Codex 模式配置
-	CodexCredentialsPath string `json:"codexCredentialsPath"`
-
-	// Claude Code 代理配置
-	ClaudeCodeAPIKey  string `json:"claudeCodeApiKey"`
-	ClaudeCodeBaseURL string `json:"claudeCodeBaseUrl"`
 }
 
 func (c *Config) EffectiveAPIRegion() string {
@@ -106,13 +101,16 @@ func (c *Config) DefaultsWithDir(configDir string) {
 	if c.Backend == "" {
 		c.Backend = "kiro"
 	}
+	if c.CompressionModel == "" {
+		c.CompressionModel = "claude-haiku-4.5"
+	}
+	if c.CompressionThreshold == 0 {
+		c.CompressionThreshold = 8
+	}
+	if c.CompressionKeepRecent == 0 {
+		c.CompressionKeepRecent = 6
+	}
 	if c.AnthropicBaseURL == "" {
 		c.AnthropicBaseURL = "https://api.anthropic.com"
-	}
-	if c.WarpCredentialsPath == "" {
-		c.WarpCredentialsPath = filepath.Join(baseDir, "warp_credentials.json")
-	}
-	if c.CodexCredentialsPath == "" {
-		c.CodexCredentialsPath = filepath.Join(baseDir, "codex_credentials.json")
 	}
 }

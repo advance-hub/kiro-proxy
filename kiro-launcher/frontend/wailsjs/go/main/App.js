@@ -142,20 +142,12 @@ export function GetTunnelStatus() {
   return window['go']['main']['App']['GetTunnelStatus']();
 }
 
-export function GetWarpCredentialFromKeychain() {
-  return window['go']['main']['App']['GetWarpCredentialFromKeychain']();
-}
-
 export function ImportCredentials(arg1) {
   return window['go']['main']['App']['ImportCredentials'](arg1);
 }
 
 export function ImportLocalAccount() {
   return window['go']['main']['App']['ImportLocalAccount']();
-}
-
-export function ImportWarpCredentialFromKeychain() {
-  return window['go']['main']['App']['ImportWarpCredentialFromKeychain']();
 }
 
 export function ListKeychainSources() {
@@ -194,6 +186,10 @@ export function ReadOpenCodeConfig() {
   return window['go']['main']['App']['ReadOpenCodeConfig']();
 }
 
+export function RefreshAccountToken(arg1) {
+  return window['go']['main']['App']['RefreshAccountToken'](arg1);
+}
+
 export function RefreshNow() {
   return window['go']['main']['App']['RefreshNow']();
 }
@@ -224,10 +220,6 @@ export function SaveServerSyncConfig(arg1, arg2) {
 
 export function SaveTunnelConfig(arg1) {
   return window['go']['main']['App']['SaveTunnelConfig'](arg1);
-}
-
-export function SetBackend(arg1) {
-  return window['go']['main']['App']['SetBackend'](arg1);
 }
 
 export function SetExternalTunnel(arg1) {

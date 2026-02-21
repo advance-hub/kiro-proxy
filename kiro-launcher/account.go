@@ -491,6 +491,56 @@ func (a *App) SyncAccount(id string) (Account, error) {
 	return *account, nil
 }
 
+// RefreshAccountToken 只刷新 Token，不获取 usage（用于自动刷新，速度更快）
+func (a *App) RefreshAccountToken(id string) (Account, error) {
+	account := getAccountStore().FindByID(id)
+	if account == nil {
+		return Account{}, fmt.Errorf("账号不存在")
+	}
+
+	// 构建凭证
+	var creds *CredentialsFile
+	isIdC := account.Provider == "BuilderId" || account.Provider == "Enterprise" || account.ClientID != ""
+
+	if isIdC {
+		creds = &CredentialsFile{
+			RefreshToken: account.RefreshToken,
+			AuthMethod:   "idc",
+			ClientID:     &account.ClientID,
+			ClientSecret: &account.ClientSecret,
+			Region:       &account.Region,
+		}
+	} else {
+		creds = &CredentialsFile{
+			RefreshToken: account.RefreshToken,
+			AuthMethod:   "social",
+		}
+	}
+
+	// 刷新 Token
+	refreshed, err := refreshCredentials(creds)
+	if err != nil {
+		account.Status = "Token已失效"
+		getAccountStore().Update(*account)
+		return *account, fmt.Errorf("刷新失败: %v", err)
+	}
+
+	account.AccessToken = derefStr(refreshed.AccessToken)
+	if refreshed.RefreshToken != "" {
+		account.RefreshToken = refreshed.RefreshToken
+	}
+	account.ExpiresAt = refreshed.ExpiresAt
+	account.Status = "正常"
+
+	// 写入 credentials.json
+	saveCredentialsFileSmart(refreshed)
+
+	getAccountStore().Update(*account)
+
+	logInfo("RefreshAccountToken: %s token refreshed", account.Email)
+	return *account, nil
+}
+
 // SwitchAccount 切换到指定账号
 func (a *App) SwitchAccount(id string) (string, error) {
 	account := getAccountStore().FindByID(id)

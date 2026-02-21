@@ -72,13 +72,9 @@ export function GetStatus():Promise<main.StatusInfo>;
 
 export function GetTunnelStatus():Promise<main.TunnelStatus>;
 
-export function GetWarpCredentialFromKeychain():Promise<Record<string, string>>;
-
 export function ImportCredentials(arg1:string):Promise<string>;
 
 export function ImportLocalAccount():Promise<main.Account>;
-
-export function ImportWarpCredentialFromKeychain():Promise<string>;
 
 export function ListKeychainSources():Promise<Array<main.KeychainSource>>;
 
@@ -89,6 +85,8 @@ export function OneClickStart():Promise<string>;
 export function OpenDataDir():Promise<string>;
 
 export function ReadClaudeCodeSettings():Promise<Record<string, any>>;
+
+export function RefreshAccountToken(arg1:string):Promise<main.Account>;
 
 export function ReadCredentialsRaw():Promise<string>;
 
@@ -113,8 +111,6 @@ export function SavePromptTemplate(arg1:main.PromptTemplate):Promise<void>;
 export function SaveServerSyncConfig(arg1:string,arg2:string):Promise<void>;
 
 export function SaveTunnelConfig(arg1:main.TunnelConfig):Promise<string>;
-
-export function SetBackend(arg1:string):Promise<string>;
 
 export function SetExternalTunnel(arg1:string):Promise<string>;
 
