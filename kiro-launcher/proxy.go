@@ -77,6 +77,9 @@ func (a *App) StartProxy() (string, error) {
 		return "", fmt.Errorf("凭据文件不存在，请先登录或获取凭据")
 	}
 
+	// 确保 activationServerUrl 指向远程服务器（激活码验证走服务器）
+	ensureActivationServerURL(configPath)
+
 	if err := a.startProxyInternal(configPath, credsPath); err != nil {
 		return "", err
 	}
@@ -220,6 +223,25 @@ func (a *App) ClearProxyLogs() {
 	a.logs = nil
 }
 
+// ensureActivationServerURL 确保 kiro-go 的 config.json 中包含 activationServerUrl
+// 这样 kiro-go 的 API 鉴权会将激活码验证发到远程服务器（codes.json 在服务器上）
+func ensureActivationServerURL(configPath string) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	var cfg map[string]interface{}
+	if json.Unmarshal(data, &cfg) != nil {
+		return
+	}
+	if _, ok := cfg["activationServerUrl"]; ok {
+		return // 已经有了，不覆盖
+	}
+	cfg["activationServerUrl"] = defaultActivationServerURL
+	out, _ := json.MarshalIndent(cfg, "", "  ")
+	os.WriteFile(configPath, out, 0644)
+}
+
 // ── One Click Start ──
 
 func (a *App) OneClickStart() (string, error) {
@@ -240,6 +262,9 @@ func (a *App) OneClickStart() (string, error) {
 
 	// Kiro 模式：走 keychain + token 刷新流程
 	a.oneClickKiroSetup(dir, credsPath)
+
+	// 确保 activationServerUrl 指向远程服务器（激活码验证走服务器）
+	ensureActivationServerURL(configPath)
 
 	cfg, _ := a.GetConfig()
 	if err := a.startProxyInternal(configPath, credsPath); err != nil {

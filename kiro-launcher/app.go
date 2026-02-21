@@ -13,15 +13,12 @@ import (
 
 // ── Data Types ──
 
-// getActivationServerURL 获取激活服务器地址（优先使用本地 kiro-go，回退到远程 7777）
+// 默认激活服务器地址（线上服务器，管理所有激活码）
+const defaultActivationServerURL = "http://117.72.183.248:13000"
+
+// getActivationServerURL 获取激活服务器地址（走远程服务器，codes.json 在服务器上）
 func getActivationServerURL() string {
-	// 优先使用本地 kiro-go (13000端口)，避免与远程 7777 数据串扰
-	cfg, err := (&App{}).GetConfig()
-	if err == nil && cfg.Host != "" && cfg.Port > 0 {
-		return fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port)
-	}
-	// 回退到默认本地地址
-	return "http://127.0.0.1:13000"
+	return defaultActivationServerURL
 }
 
 type ActivationData struct {
