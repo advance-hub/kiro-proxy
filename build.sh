@@ -236,34 +236,33 @@ build_linux() {
 build_linux_gui() {
     local server="${DEPLOY_SERVER:-root@117.72.183.248}"
     local remote_dir="/opt/kiro-proxy-src"
-    local remote_path="$PATH:/usr/local/go/bin:/root/go/bin"
+    local linux_res="$WAILS_DIR/build/linux"
 
     info "Building Linux GUI via remote server ($server)..."
 
     # 1. 本地编译前端
-    info "[1/5] Building frontend locally..."
+    info "[1/6] Building frontend locally..."
     (cd "$WAILS_DIR/frontend" && pnpm install && pnpm run build)
 
     # 2. 打包源码（排除不需要的目录）
-    info "[2/5] Packaging source code..."
+    info "[2/6] Packaging source code..."
     local src_tar="/tmp/kiro-proxy-src.tar.gz"
     (cd "$SCRIPT_DIR" && tar czf "$src_tar" \
         --exclude='.git' \
         --exclude='node_modules' \
         --exclude='release' \
-        --exclude='build' \
+        --exclude='build/bin' \
         --exclude='杂' \
         kiro-go kiro-launcher build.sh)
     info "Source package: $(du -h "$src_tar" | cut -f1)"
 
     # 3. 上传到服务器并解压
-    info "[3/5] Uploading to server..."
+    info "[3/6] Uploading to server..."
     scp "$src_tar" "$server:/tmp/"
     ssh "$server" "rm -rf $remote_dir && mkdir -p $remote_dir && tar xzf /tmp/kiro-proxy-src.tar.gz -C $remote_dir 2>/dev/null"
 
     # 4. 服务器上编译
-    info "[4/5] Compiling on server..."
-    # 检查宝塔 Node 路径
+    info "[4/6] Compiling on server..."
     local node_path
     node_path=$(ssh "$server" "ls -d /www/server/nodejs/*/bin 2>/dev/null | tail -1" || true)
     local extra_path=""
@@ -279,15 +278,32 @@ build_linux_gui() {
         cd $remote_dir/kiro-launcher && \
         wails build -clean -o kiro-launcher -s"
 
-    # 5. 取回产物
-    info "[5/5] Downloading build artifact..."
+    # 5. 取回二进制
+    info "[5/6] Downloading build artifact..."
+    local staging="/tmp/kiro-launcher-linux-pkg"
+    rm -rf "$staging"
+    mkdir -p "$staging/kiro-launcher"
+    scp "$server:$remote_dir/kiro-launcher/build/bin/kiro-launcher" "$staging/kiro-launcher/kiro-launcher"
+    chmod +x "$staging/kiro-launcher/kiro-launcher"
+
+    # 6. 打包为 .tar.gz（包含桌面快捷方式、图标、安装脚本）
+    info "[6/6] Creating distribution package..."
+    cp "$linux_res/kiro-launcher.desktop" "$staging/kiro-launcher/"
+    cp "$linux_res/install.sh" "$staging/kiro-launcher/"
+    chmod +x "$staging/kiro-launcher/install.sh"
+    if [ -f "$WAILS_DIR/build/appicon.png" ]; then
+        cp "$WAILS_DIR/build/appicon.png" "$staging/kiro-launcher/"
+    fi
+
     local out_dir="$OUTPUT_DIR/linux-gui"
     mkdir -p "$out_dir"
-    scp "$server:$remote_dir/kiro-launcher/build/bin/kiro-launcher" "$out_dir/kiro-launcher"
-    chmod +x "$out_dir/kiro-launcher"
+    local pkg_name="kiro-launcher-linux-amd64.tar.gz"
+    (cd "$staging" && tar czf "$out_dir/$pkg_name" kiro-launcher/)
 
-    info "Linux GUI binary: $out_dir/kiro-launcher ($(du -h "$out_dir/kiro-launcher" | cut -f1))"
-    info "运行前需安装: sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37"
+    info "Linux GUI 安装包: $out_dir/$pkg_name ($(du -h "$out_dir/$pkg_name" | cut -f1))"
+    info "安装方式: tar xzf $pkg_name && cd kiro-launcher && sudo ./install.sh"
+
+    rm -rf "$staging"
 }
 
 # ── Deploy to server ──

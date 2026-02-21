@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Kiro Launcher
+Comment=Kiro Proxy Manager
+Exec=kiro-launcher
+Icon=kiro-launcher
+Type=Application
+Categories=Development;Utility;
+Terminal=false
+StartupWMClass=kiro-launcher

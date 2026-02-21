@@ -8,8 +8,8 @@ dist
 target
 杂
 
-# Wails build output
-kiro-launcher/build/
+# Wails build output (only ignore bin/)
+kiro-launcher/build/bin/
 
 # Embedded sidecar binaries (built by build.sh)
 kiro-launcher/sidecar/kiro-rs

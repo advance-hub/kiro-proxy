@@ -126,7 +126,16 @@ bash build.sh linux-gui
 DEPLOY_SERVER=root@117.72.183.248 bash build.sh linux-gui
 ```
 
-产物输出到：`release/linux-gui/kiro-launcher`
+产物输出到：`release/linux-gui/kiro-launcher-linux-amd64.tar.gz`
+
+包内结构：
+```
+kiro-launcher/
+├── kiro-launcher              # 主程序二进制
+├── kiro-launcher.desktop      # Linux 桌面快捷方式
+├── appicon.png                # 应用图标
+└── install.sh                 # 一键安装脚本
+```
 
 ### 方式二：手动步骤
 
@@ -190,28 +199,54 @@ wails build -clean -o kiro-launcher -s
 # 产物在 build/bin/kiro-launcher
 ```
 
-#### 2.5 取回产物
+#### 2.5 取回产物并打包
 
 ```bash
 # 本地执行
+mkdir -p /tmp/kiro-launcher-linux-pkg/kiro-launcher
+scp root@117.72.183.248:/opt/kiro-proxy-src/kiro-launcher/build/bin/kiro-launcher \
+    /tmp/kiro-launcher-linux-pkg/kiro-launcher/
+chmod +x /tmp/kiro-launcher-linux-pkg/kiro-launcher/kiro-launcher
+
+# 添加打包资源
+cp kiro-launcher/build/linux/kiro-launcher.desktop /tmp/kiro-launcher-linux-pkg/kiro-launcher/
+cp kiro-launcher/build/linux/install.sh /tmp/kiro-launcher-linux-pkg/kiro-launcher/
+cp kiro-launcher/build/appicon.png /tmp/kiro-launcher-linux-pkg/kiro-launcher/
+
+# 生成安装包
 mkdir -p release/linux-gui
-scp root@117.72.183.248:/opt/kiro-proxy-src/kiro-launcher/build/bin/kiro-launcher release/linux-gui/
+cd /tmp/kiro-launcher-linux-pkg
+tar czf /path/to/kiro-proxy/release/linux-gui/kiro-launcher-linux-amd64.tar.gz kiro-launcher/
 ```
 
 ---
 
 ## 三、使用说明
 
-### 在 Linux 桌面上运行
+### 方式一：使用安装脚本（推荐）
+
+```bash
+# 解压安装包
+tar xzf kiro-launcher-linux-amd64.tar.gz
+cd kiro-launcher
+
+# 一键安装（自动安装依赖、注册桌面快捷方式）
+sudo ./install.sh
+
+# 之后可以从应用菜单启动，或终端运行：
+kiro-launcher
+```
+
+### 方式二：免安装直接运行
 
 ```bash
 # 安装运行时依赖（仅首次）
 sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37
 
-# 赋予执行权限
+# 解压并运行
+tar xzf kiro-launcher-linux-amd64.tar.gz
+cd kiro-launcher
 chmod +x kiro-launcher
-
-# 运行
 ./kiro-launcher
 ```
 
